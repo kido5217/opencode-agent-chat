@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -164,6 +164,17 @@ async function runCommand(args: string[], options: CommandOptions): Promise<Comm
   return { exitCode, logPath: options.logPath };
 }
 
+async function withRoot(prefix: string, work: (root: string) => Promise<void>): Promise<void> {
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  try {
+    await work(root);
+    rmSync(root, { recursive: true, force: true });
+  } catch (err) {
+    console.error(`agent-chat smoke: artifacts kept at ${root}`);
+    throw err;
+  }
+}
+
 function opencodeRunArgs(prompt: string): string[] {
   return [
     "opencode2",
@@ -235,7 +246,6 @@ async function seedIsolatedState(root: string, project: string): Promise<void> {
     bootstrap.exitCode === 0,
     `bootstrap "opencode2 session list" exited ${bootstrap.exitCode} (log: ${bootstrap.logPath})`,
   );
-
   const host = new Database(HOST_DB, { readonly: true });
   const credentials = host
     .query(
@@ -247,7 +257,7 @@ async function seedIsolatedState(root: string, project: string): Promise<void> {
     .get() as CatalogRow | null;
   host.close();
   assert(credentials.length > 0, `host opencode.db at ${HOST_DB} has no credential rows; the model would be unavailable`);
-  assert(catalog !== null, `host opencode.db at ${HOST_DB} has no models-dev:catalog kv row; model routing fails without it`);
+  assert(catalog !== null, `host opencode.db at ${HOST_DB} has no models-dev:catalog kv row; model routing fails without it (run opencode2 against a provider on this host once to create it)`);
 
   const isolated = new Database(isolatedDbPath(root));
   const insertCredential = isolated.query(
@@ -280,8 +290,6 @@ function sessionRows(root: string): number {
   try {
     const row = db.query("select count(*) as n from session_v2").get() as { n: number };
     return row.n;
-  } catch {
-    return 0;
   } finally {
     db.close();
   }
@@ -343,7 +351,10 @@ function toolOutputs(invocations: { input: unknown; outputs: string[] }[]): stri
 }
 
 async function chatScenario(): Promise<void> {
-  const root = mkdtempSync(join(tmpdir(), "agent-chat-smoke-chat-"));
+  await withRoot("agent-chat-smoke-chat-", chatScenarioBody);
+}
+
+async function chatScenarioBody(root: string): Promise<void> {
   const chatsDir = join(root, "chats");
   const project = scaffold(root, [mountEntry(root, chatsDir)]);
   mountPlugin(root);
@@ -482,43 +493,51 @@ async function chatScenario(): Promise<void> {
   );
 }
 
-async function configScenario(): Promise<void> {
-  const removalRoot = mkdtempSync(join(tmpdir(), "agent-chat-smoke-config-removal-"));
-  const removalChats = join(removalRoot, "chats-global");
-  const removalProject = scaffold(removalRoot, [`-${PLUGIN_ID}`], [mountEntry(removalRoot, removalChats)]);
-  mountPlugin(removalRoot);
-  await seedIsolatedState(removalRoot, removalProject);
-  const removalRun = await runCommand(opencodeRunArgs(CONFIG_PROMPT), {
-    cwd: removalProject,
-    env: xdgEnv(removalRoot),
+async function runConfigArm(
+  root: string,
+  chats: string,
+  projectPlugins: unknown[],
+  globalPlugins?: unknown[],
+): Promise<CommandResult> {
+  const project = scaffold(root, projectPlugins, globalPlugins);
+  mountPlugin(root);
+  await seedIsolatedState(root, project);
+  return runCommand(opencodeRunArgs(CONFIG_PROMPT), {
+    cwd: project,
+    env: xdgEnv(root),
     timeoutS: CONFIG_TIMEOUT_S,
-    logPath: join(removalRoot, "removal-run.log"),
+    logPath: join(root, "config-run.log"),
   });
-  const removalDebug = join(removalChats, "debug.log");
-  assert(
-    !existsSync(removalDebug),
-    `global add + project "-${PLUGIN_ID}" loaded the plugin: ${removalDebug} exists (run log: ${removalRun.logPath})`,
-  );
-  assert(
-    sessionRows(removalRoot) > 0,
-    `${isolatedDbPath(removalRoot)} has no session_v2 row; the removal run never created a session, so the no-load result is inconclusive`,
-  );
+}
 
-  const addRoot = mkdtempSync(join(tmpdir(), "agent-chat-smoke-config-add-"));
-  const addChats = join(addRoot, "chats-project");
-  const addProject = scaffold(addRoot, [mountEntry(addRoot, addChats)]);
-  mountPlugin(addRoot);
-  await seedIsolatedState(addRoot, addProject);
-  const addRun = await runCommand(opencodeRunArgs(CONFIG_PROMPT), {
-    cwd: addProject,
-    env: xdgEnv(addRoot),
-    timeoutS: CONFIG_TIMEOUT_S,
-    logPath: join(addRoot, "add-run.log"),
+async function configScenario(): Promise<void> {
+  await withRoot("agent-chat-smoke-config-removal-", async (root) => {
+    const chats = join(root, "chats-global");
+    const run = await runConfigArm(root, chats, [`-${PLUGIN_ID}`], [mountEntry(root, chats)]);
+    const debug = join(chats, "debug.log");
+    assert(run.exitCode === 0 || run.exitCode === 124, `removal run exited ${run.exitCode} (log: ${run.logPath})`);
+    assert(
+      !existsSync(debug),
+      `global add + project "-${PLUGIN_ID}" loaded the plugin: ${debug} exists (run log: ${run.logPath})`,
+    );
+    assert(
+      sessionRows(root) > 0,
+      `${isolatedDbPath(root)} has no session_v2 row; the removal run never created a session, so the no-load result is inconclusive`,
+    );
   });
-  const addDebug = join(addChats, "debug.log");
-  assert(existsSync(addDebug), `project add did not load the plugin: ${addDebug} missing (run log: ${addRun.logPath})`);
-  const addLoads = debugLines(addDebug).filter((line) => line === "plugin loaded").length;
-  assert(addLoads === 1, `expected exactly one "plugin loaded" line in ${addDebug}, found ${addLoads}`);
+
+  await withRoot("agent-chat-smoke-config-add-", async (root) => {
+    const chats = join(root, "chats-project");
+    const run = await runConfigArm(root, chats, [mountEntry(root, chats)]);
+    const debug = join(chats, "debug.log");
+    assert(
+      run.exitCode === 0 || (run.exitCode === 124 && existsSync(debug)),
+      `add run exited ${run.exitCode} before the plugin loaded (log: ${run.logPath})`,
+    );
+    assert(existsSync(debug), `project add did not load the plugin: ${debug} missing (run log: ${run.logPath})`);
+    const loads = debugLines(debug).filter((line) => line === "plugin loaded").length;
+    assert(loads === 1, `expected exactly one "plugin loaded" line in ${debug}, found ${loads}`);
+  });
 }
 
 type Scenario = "chat" | "config";
