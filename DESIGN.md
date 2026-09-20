@@ -37,15 +37,15 @@ Three pieces, one dependency direction: core ← adapter, core ← viewer.
 | Piece | Path | Responsibility |
 |---|---|---|
 | Core | `src/core/` | Pure TypeScript: storage, message protocol, digest, membership, options, migrations. No opencode imports; `bun:sqlite` is the only runtime dependency. |
-| Adapter | `src/plugin.ts` | The installed plugin. Wires opencode into core: event subscription, context-hook injection, tool registration, session listing. Thin and branch-free. |
+| Adapter | `src/plugin.ts` | The installed plugin. Wires opencode into core: event subscription, context-hook injection, tool registration. Thin and branch-free. |
 | Viewer | `src/cli.ts` | `agent-chat` CLI. Reads chat files directly; never imports the plugin. |
 
 Runtime facts that shape this (all verified in `docs/research/`):
 
 - Plugins run **in-process** in the opencode server; `bun:sqlite` works there
   (`v2-plugin-packaging.md`).
-- `ctx.event.subscribe` is **live-only** — no replay. Membership is bootstrapped from the
-  session listing at plugin load (`v2-event-bus.md`).
+- `ctx.event.subscribe` is **live-only** — no replay. Membership hydrates on first sight of a
+  session; there is no plugin-side session listing on 2.0.8 (`v2-event-bus.md`).
 - The `context` hook fires **per model request** for main and subagent sessions, including
   mid-run tool continuations; injected text reaches the model but is **not persisted** in the
   transcript, so injections are regenerated every request (`v2-context-hook.md`).
@@ -301,7 +301,7 @@ Detail: #16.
     loaded (pins the corrected removal semantics live).
 - **Regression set**: lossless drain (50 unread over repeated digests, no gaps or dupes);
   exactly-once digest (rebuilding without advancing delivers nothing twice); membership
-  reconcile from a session list (right roster, no replay, no synthetic rows); malformed input
+  hydration and reconcile (right roster, no replay, no synthetic rows); malformed input
   (unknown kind, over-cap body, unknown `in_reply_to`, multi-line and `[id]`-lookalike bodies
   that must not forge digest entries); migration idempotence; per-run caps.
 - **The adapter has no unit tests**: it stays branch-free and is guarded by the smoke run.
