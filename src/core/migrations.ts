@@ -39,6 +39,6 @@ export function migrate(db: Database): void {
     db.transaction(() => {
       db.exec(sql);
       db.exec(`PRAGMA user_version = ${version}`);
-    })();
+    }).immediate();
   }
 }

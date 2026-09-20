@@ -74,6 +74,42 @@ describe("root lifecycle", () => {
   });
 });
 
+describe("repeated starts and reconcile", () => {
+  test("a repeated start while live does not duplicate the join row", () => {
+    const { membership, rows, setNow } = setup();
+    membership.sessionCreated({ id: "root" });
+    membership.executionStarted("root");
+    setNow(5);
+    membership.executionStarted("root");
+    expect(rows).toEqual([{ root: "root", body: "main joined" }]);
+    membership.executionEnded("root", "completed");
+    setNow(9);
+    membership.executionStarted("root");
+    expect(rows.map((r) => r.body)).toEqual(["main joined", "main left (completed)", "main joined"]);
+  });
+
+  test("a start whose root is unknown is not live", () => {
+    const { membership } = setup();
+    membership.sessionCreated({ id: "child", parentID: "missing", agentType: "explore" });
+    membership.executionStarted("child");
+    expect(membership.isLive("child")).toBe(false);
+    expect(membership.roster("missing")).toEqual([]);
+  });
+
+  test("reconcile demotes members absent from the list", () => {
+    const { membership, rows, setNow } = setup();
+    membership.sessionCreated({ id: "root" });
+    membership.executionStarted("root");
+    setNow(3);
+    membership.sessionCreated({ id: "kid", parentID: "root", agentType: "explore" });
+    membership.executionStarted("kid");
+    membership.reconcile([{ id: "root", agentType: "build", live: true }]);
+    expect(membership.isLive("kid")).toBe(false);
+    expect(membership.roster("root").map((p) => p.name)).toEqual(["main"]);
+    expect(rows.map((r) => r.body)).toEqual(["main joined", "explore joined"]);
+  });
+});
+
 describe("child naming", () => {
   test("suffixes only on live collisions and never renames", () => {
     const { membership, rows, setNow } = setup();

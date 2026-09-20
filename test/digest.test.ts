@@ -55,6 +55,18 @@ describe("buildDigest", () => {
     expect(buildDigest(db, "ses_test_0001", "main", limits, 2)).toBeNull();
   });
 
+  test("the join briefing honours maxChars while keeping the newest messages", () => {
+    const { db } = tempChat();
+    const ids = seed(db, 20);
+    const d = buildJoinBriefing(db, "ses_test_0001", "main", { maxMessages: 20, maxChars: 200 }, 1)!;
+    const newest = Number(ids.at(-1));
+    const seen = [...d.text.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1]));
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.length).toBeLessThan(20);
+    expect(seen.at(-1)).toBe(newest);
+    expect(d.cursorTo).toBe(newest);
+  });
+
   test("an empty chat injects nothing but still records the cursor", () => {
     const { db } = tempChat();
     expect(buildJoinBriefing(db, "ses_test_0001", "main", limits, 1)).toBeNull();

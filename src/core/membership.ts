@@ -52,12 +52,13 @@ export class Membership {
     const member = this.members.get(sessionID);
     if (member === undefined) return;
     const root = this.rootFor(sessionID);
+    if (root === null) return;
+    const wasLive = member.live;
     member.live = true;
     member.busy = true;
     member.joinedAt = this.deps.now();
-    if (root === null) return;
     const name = this.assignName(member, root);
-    this.deps.appendSystemMessage(root, `${name} joined`);
+    if (!wasLive) this.deps.appendSystemMessage(root, `${name} joined`);
   }
 
   executionEnded(sessionID: string, outcome: "completed" | "failed" | "interrupted"): void {
@@ -72,6 +73,12 @@ export class Membership {
 
   reconcile(sessions: SessionInfo[]): void {
     for (const s of sessions) this.sessionCreated(s);
+    const alive = new Set(sessions.filter((s) => s.live === true).map((s) => s.id));
+    for (const member of this.members.values()) {
+      if (!member.live || alive.has(member.id)) continue;
+      member.live = false;
+      member.busy = false;
+    }
     for (const s of sessions) {
       if (s.live !== true) continue;
       const member = this.members.get(s.id);
