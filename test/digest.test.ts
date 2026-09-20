@@ -53,6 +53,21 @@ describe("buildDigest", () => {
     expect(d.text).toContain(`Open questions: #${q.id} (explore)`);
   });
 
+  test("the open-questions footer caps at five and counts the rest", () => {
+    const { db } = tempChat();
+    seed(db, 3);
+    for (let i = 0; i < 8; i++) {
+      postMessage(
+        db,
+        { senderName: "explore", senderSession: "ses_e", now: 10 + i, maxBodyChars: 4000 },
+        { body: `q${i}`, kind: "question" },
+      );
+    }
+    const d = buildDigest(db, "ses_test_0001", "main", limits, 100)!;
+    expect(d.text).toContain("Open questions: #4 (explore), #5 (explore), #6 (explore), #7 (explore), #8 (explore), +3 more open questions");
+    expect(d.text).not.toContain("#9 (explore)");
+  });
+
   test("a body longer than 200 characters is still excerpted at 200 in the digest", () => {
     const { db } = tempChat();
     const m = postMessage(db, { senderName: "main", senderSession: "ses_test_0001", now: 1, maxBodyChars: 4000 }, { body: "a".repeat(500) });

@@ -23,9 +23,15 @@ export function renderMessages(messages: Message[], maxBodyChars = 200): string 
   return messages.map((m) => renderMessageLine(m, maxBodyChars)).join("\n");
 }
 
+export const MAX_OPEN_QUESTION_LINES = 5;
+
 export function renderOpenQuestions(questions: Message[]): string {
   if (questions.length === 0) return "Open questions: none";
-  return `Open questions: ${questions.map((q) => `#${q.id} (${sanitize(q.sender_name)})`).join(", ")}`;
+  const shown = questions.slice(0, MAX_OPEN_QUESTION_LINES);
+  const listed = shown.map((q) => `#${q.id} (${sanitize(q.sender_name)})`).join(", ");
+  const hidden = questions.length - shown.length;
+  const tail = hidden > 0 ? `, +${hidden} more open questions` : "";
+  return `Open questions: ${listed}${tail}`;
 }
 
 export function renderRoster(participants: Participant[]): string {
