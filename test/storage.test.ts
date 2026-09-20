@@ -39,6 +39,8 @@ describe("sandbox and open", () => {
     }
     expect((db.query("PRAGMA journal_mode").get() as any).journal_mode).toBe("wal");
     expect((db.query("PRAGMA busy_timeout").get() as any).timeout).toBe(5000);
+    expect((db.query("PRAGMA synchronous").get() as any).synchronous).toBe(1);
+    expect((db.query("PRAGMA foreign_keys").get() as any).foreign_keys).toBe(1);
     db.close();
   });
   test("a symlinked chat file is refused", () => {

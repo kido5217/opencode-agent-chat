@@ -45,38 +45,6 @@ describe("buildDigest", () => {
     expect(d.cursorTo).toBe(ids.at(-1)!);
   });
 
-  test("join briefing shows the last N of the history and parks the cursor at the latest id", () => {
-    const { db } = tempChat();
-    seed(db, 34);
-    const d = buildJoinBriefing(db, "ses_test_0001", "main", limits, 1)!;
-    expect(d.text).toContain("34 messages total");
-    expect(d.text).toContain("showing the last 20");
-    expect(d.cursorTo).toBe(34);
-    expect(buildDigest(db, "ses_test_0001", "main", limits, 2)).toBeNull();
-  });
-
-  test("the join briefing honours maxChars while keeping the newest messages", () => {
-    const { db } = tempChat();
-    const ids = seed(db, 20);
-    const d = buildJoinBriefing(db, "ses_test_0001", "main", { maxMessages: 20, maxChars: 200 }, 1)!;
-    const newest = Number(ids.at(-1));
-    const seen = [...d.text.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1]));
-    expect(seen.length).toBeGreaterThan(0);
-    expect(seen.length).toBeLessThan(20);
-    expect(seen.at(-1)).toBe(newest);
-    expect(d.cursorTo).toBe(newest);
-  });
-
-  test("an empty chat injects nothing but still records the cursor", () => {
-    const { db } = tempChat();
-    expect(buildJoinBriefing(db, "ses_test_0001", "main", limits, 1)).toBeNull();
-    expect(getCursor(db, "ses_test_0001")).not.toBeNull();
-    expect(getCursor(db, "ses_test_0001")?.last_read_id).toBe(0);
-    const m = postMessage(db, { senderName: "main", senderSession: "ses_test_0001", now: 2, maxBodyChars: 4000 }, { body: "hi" });
-    const d = buildDigest(db, "ses_test_0001", "main", limits, 3)!;
-    expect(d.text).toContain(`[${m.id}]`);
-  });
-
   test("questions and blockers are flagged and open questions close", () => {
     const { db } = tempChat();
     const q = postMessage(db, { senderName: "explore", senderSession: "ses_e", now: 1, maxBodyChars: 4000 }, { body: "how?", kind: "question", to: "main" });
@@ -106,6 +74,40 @@ describe("buildDigest", () => {
       .filter((match): match is RegExpExecArray => match !== null)
       .map((match) => Number(match[1]));
     expect(entryIds).toEqual([lf.id, cr.id]);
+  });
+});
+
+describe("buildJoinBriefing", () => {
+  test("shows the last N of the history and parks the cursor at the latest id", () => {
+    const { db } = tempChat();
+    seed(db, 34);
+    const d = buildJoinBriefing(db, "ses_test_0001", "main", limits, 1)!;
+    expect(d.text).toContain("34 messages total");
+    expect(d.text).toContain("showing the last 20");
+    expect(d.cursorTo).toBe(34);
+    expect(buildDigest(db, "ses_test_0001", "main", limits, 2)).toBeNull();
+  });
+
+  test("honours maxChars while keeping the newest messages", () => {
+    const { db } = tempChat();
+    const ids = seed(db, 20);
+    const d = buildJoinBriefing(db, "ses_test_0001", "main", { maxMessages: 20, maxChars: 200 }, 1)!;
+    const newest = Number(ids.at(-1));
+    const seen = [...d.text.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1]));
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.length).toBeLessThan(20);
+    expect(seen.at(-1)).toBe(newest);
+    expect(d.cursorTo).toBe(newest);
+  });
+
+  test("an empty chat injects nothing but still records the cursor", () => {
+    const { db } = tempChat();
+    expect(buildJoinBriefing(db, "ses_test_0001", "main", limits, 1)).toBeNull();
+    expect(getCursor(db, "ses_test_0001")).not.toBeNull();
+    expect(getCursor(db, "ses_test_0001")?.last_read_id).toBe(0);
+    const m = postMessage(db, { senderName: "main", senderSession: "ses_test_0001", now: 2, maxBodyChars: 4000 }, { body: "hi" });
+    const d = buildDigest(db, "ses_test_0001", "main", limits, 3)!;
+    expect(d.text).toContain(`[${m.id}]`);
   });
 });
 

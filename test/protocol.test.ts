@@ -44,7 +44,7 @@ describe("postMessage", () => {
     const { db } = tempChat();
     expect(() => postMessage(db, meta(), { body: "x", kind: "nope" as any })).toThrow(ChatError);
     expect(() => postMessage(db, meta(), { body: "x", kind: "system" })).toThrow(ChatError);
-    try { postMessage(db, meta(), { body: "x", kind: "system" }); } catch (e) { expect((e as ChatError).code).toBe("unknown_kind"); }
+    try { postMessage(db, meta(), { body: "x", kind: "system" }); expect.unreachable(); } catch (e) { expect((e as ChatError).code).toBe("unknown_kind"); }
   });
   test("system sender may post system rows", () => {
     const { db } = tempChat();
@@ -54,7 +54,7 @@ describe("postMessage", () => {
   test("replying to a missing message is rejected", () => {
     const { db } = tempChat();
     expect(() => postMessage(db, meta(), { body: "x", kind: "answer", in_reply_to: 99 })).toThrow(ChatError);
-    try { postMessage(db, meta(), { body: "x", kind: "answer", in_reply_to: 99 }); } catch (e) { expect((e as ChatError).code).toBe("unknown_reply"); }
+    try { postMessage(db, meta(), { body: "x", kind: "answer", in_reply_to: 99 }); expect.unreachable(); } catch (e) { expect((e as ChatError).code).toBe("unknown_reply"); }
   });
 });
 
