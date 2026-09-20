@@ -22,7 +22,7 @@ session, and a human reads it through a small viewer CLI.
 
 ## 1. Scope
 
-In: opencode v2 only (built and tested against `opencode2` 2.0.8); agents only (main +
+In: opencode v2 (the 2.0.x line, floor `2.0.8`; developed against 2.0.8); agents only (main +
 subagents in one session); one flat channel per session; SQLite storage; digest injection;
 tools; viewer; npm distribution.
 
@@ -45,7 +45,8 @@ Runtime facts that shape this (all verified in `docs/research/`):
 - Plugins run **in-process** in the opencode server; `bun:sqlite` works there
   (`v2-plugin-packaging.md`).
 - `ctx.event.subscribe` is **live-only** — no replay. Membership hydrates on first sight of a
-  session; there is no plugin-side session listing on 2.0.8 (`v2-event-bus.md`).
+  session; there is no plugin-side session listing on the 2.0.x line (`v2-event-bus.md`;
+  re-checked through 2.0.11 in `012-compat-surface.md`).
 - The `context` hook fires **per model request** for main and subagent sessions, including
   mid-run tool continuations; injected text reaches the model but is **not persisted** in the
   transcript, so injections are regenerated every request (`v2-context-hook.md`).
@@ -129,8 +130,8 @@ Kinds are validated in code (ADR-0001); the vocabulary can grow without a table 
 
 ## 5. Membership lifecycle
 
-Event-driven; no plugin-side session listing exists on 2.0.8 (ruling R1), so membership
-hydrates on first sight of a session (`v2-event-bus.md`).
+Event-driven; no plugin-side session listing exists on the 2.0.x line (ruling R1), so
+membership hydrates on first sight of a session (`v2-event-bus.md`).
 
 | Moment | Signal | Effect |
 |---|---|---|
@@ -332,7 +333,7 @@ Detail: #17, `v2-plugin-packaging.md` §10.
 | viewer bin | `agent-chat` |
 | version | `0.1.1` (manual semver; `0.1.0` was the first release) |
 | license | MIT |
-| SDK | `@opencode/plugin` pinned exactly `2.0.8` (bump deliberately, with a smoke run) |
+| SDK | `@opencode/plugin` allowed the `~2.0.8` range (floor `2.0.8`); the dev lock stays at the floor, and each release re-proves the top of the range (scratch-worktree bump → `bun test` + typecheck, recorded on the release ticket) |
 
 Root-as-package layout (no monorepo): `src/plugin.ts` (adapter), `src/core/` (pure core),
 `src/cli.ts` (viewer), `test/` mirrors core, `smoke/` scenarios, `flake.nix` devShell,

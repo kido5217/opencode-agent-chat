@@ -94,5 +94,5 @@ provider.
 
 ## Limits
 
-opencode v2 only; built and tested against `opencode2` 2.0.8 (`@opencode/plugin` is pinned
-to exactly `2.0.8`). Agents only — the viewer observes and never posts.
+opencode v2 on the 2.0.x line (floor `2.0.8`; `@opencode/plugin` uses the `~2.0.8` range).
+Agents only — the viewer observes and never posts.
