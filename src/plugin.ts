@@ -2,6 +2,7 @@ import { Plugin } from "@opencode/plugin";
 import type { Database } from "bun:sqlite";
 import protocolText from "../docs/chat-protocol.md" with { type: "text" };
 import { buildDigest, buildJoinBriefing } from "./core/digest.ts";
+import { ContextFilter } from "./core/context-filter.ts";
 import { Membership } from "./core/membership.ts";
 import { parseOptions } from "./core/options.ts";
 import { ChatError, postMessage, readMessages, RunGuard, unreadMessages } from "./core/protocol.ts";
@@ -109,6 +110,7 @@ export default Plugin.define({
       },
     });
     const guard = new RunGuard(options.maxPostsPerRun);
+    const hidden = new ContextFilter();
 
     const seen = new Set<string>();
     const hydrate = async (sessionID: string): Promise<void> => {
@@ -165,6 +167,23 @@ export default Plugin.define({
                 membership.executionEnded(sessionID, "interrupted");
                 log(`leave ${membership.nameFor(sessionID) ?? sessionID} (interrupted)`);
                 break;
+              case "session.inbox.enqueued": {
+                const item = (
+                  ev.data as unknown as {
+                    item?: { type?: unknown; payload?: { metadata?: Record<string, unknown> } };
+                  }
+                ).item;
+                const inboxID = (ev.data as unknown as { inboxID?: unknown }).inboxID;
+                if (
+                  item?.type === "synthetic" &&
+                  item.payload?.metadata?.source === "agent-chat" &&
+                  typeof inboxID === "string"
+                ) {
+                  hidden.note(inboxID);
+                  log(`hidden synthetic ${inboxID} (${sessionID})`);
+                }
+                break;
+              }
               default:
                 break;
             }
@@ -179,6 +198,16 @@ export default Plugin.define({
 
     await ctx.session.hook("context", (event) => {
       const sessionID = event.sessionID;
+      const messages = event.messages as unknown as Array<{ id: string }>;
+      let hiddenCount = 0;
+      for (let i = messages.length - 1; i >= 0; i -= 1) {
+        const message = messages[i];
+        if (message !== undefined && hidden.has(message.id)) {
+          messages.splice(i, 1);
+          hiddenCount += 1;
+        }
+      }
+      if (hiddenCount > 0) log(`context filter removed ${hiddenCount} synthetic message(s) for ${sessionID}`);
       const root = membership.rootFor(sessionID);
       if (root === null) {
         log(`context for unknown session ${sessionID}`);

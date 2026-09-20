@@ -113,6 +113,18 @@ export function readMessages(db: Database, q: ReadQuery = {}): Message[] {
     .all(...params, clampLimit(q.limit)) as Message[];
 }
 
+export function readAllMessages(db: Database): Message[] {
+  const messages: Message[] = [];
+  let cursor = 0;
+  for (;;) {
+    const page = readMessages(db, { since: cursor, limit: 100 });
+    if (page.length === 0) return messages;
+    messages.push(...page);
+    if (page.length < 100) return messages;
+    cursor = page[page.length - 1]?.id ?? cursor;
+  }
+}
+
 export function unreadMessages(db: Database, lastReadId: number, limit: number): Message[] {
   return readMessages(db, { since: lastReadId, limit });
 }

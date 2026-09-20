@@ -9,6 +9,7 @@
   },
   "exports": {
     "./server": "./src/plugin.ts",
+    "./tui": "./src/tui.ts",
     ".": "./src/plugin.ts"
   },
   "files": ["src", "docs/chat-protocol.md", "README.md", "LICENSE"],
