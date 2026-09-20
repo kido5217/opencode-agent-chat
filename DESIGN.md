@@ -37,15 +37,15 @@ Three pieces, one dependency direction: core ← adapter, core ← viewer.
 | Piece | Path | Responsibility |
 |---|---|---|
 | Core | `src/core/` | Pure TypeScript: storage, message protocol, digest, membership, options, migrations. No opencode imports; `bun:sqlite` is the only runtime dependency. |
-| Adapter | `src/plugin.ts` | The installed plugin. Wires opencode into core: event subscription, context-hook injection, tool registration, session listing. Thin and branch-free. |
+| Adapter | `src/plugin.ts` | The installed plugin. Wires opencode into core: event subscription, context-hook injection, tool registration. Thin and branch-free. |
 | Viewer | `src/cli.ts` | `agent-chat` CLI. Reads chat files directly; never imports the plugin. |
 
 Runtime facts that shape this (all verified in `docs/research/`):
 
 - Plugins run **in-process** in the opencode server; `bun:sqlite` works there
   (`v2-plugin-packaging.md`).
-- `ctx.event.subscribe` is **live-only** — no replay. Membership is bootstrapped from the
-  session listing at plugin load (`v2-event-bus.md`).
+- `ctx.event.subscribe` is **live-only** — no replay. Membership hydrates on first sight of a
+  session; there is no plugin-side session listing on 2.0.8 (`v2-event-bus.md`).
 - The `context` hook fires **per model request** for main and subagent sessions, including
   mid-run tool continuations; injected text reaches the model but is **not persisted** in the
   transcript, so injections are regenerated every request (`v2-context-hook.md`).
@@ -129,7 +129,8 @@ Kinds are validated in code (ADR-0001); the vocabulary can grow without a table 
 
 ## 5. Membership lifecycle
 
-Event-driven; no polling I/O beyond the startup reconcile (`v2-event-bus.md`).
+Event-driven; no plugin-side session listing exists on 2.0.8 (ruling R1), so membership
+hydrates on first sight of a session (`v2-event-bus.md`).
 
 | Moment | Signal | Effect |
 |---|---|---|
@@ -137,7 +138,7 @@ Event-driven; no polling I/O beyond the startup reconcile (`v2-event-bus.md`).
 | Subagent spawned | `session.created` with `data.parentID` | child joins its root's chat (deeper nesting walks the parent chain) |
 | Session running | `session.execution.started` | join/rejoin recorded (`<name> joined`) |
 | Session reaches terminal | `session.execution.succeeded \| failed \| interrupted` | leave recorded (`<name> left (completed\|failed\|interrupted)`) |
-| Plugin loads | session listing | reconcile membership from live sessions; no synthetic events on restart |
+| Plugin loads | — (no session listing; see §7) | sessions register on their first event, and each new child walks its ancestor chain so the chat root resolves; no synthetic events on restart |
 
 - **Roster** is live-only: name, agent type, session id, busy/idle, joined-at. A finished
   session is absent.
@@ -193,16 +194,23 @@ configuration is the only gate.
 
 | Tool | Input | Returns | Errors |
 |---|---|---|---|
-| `chat_post` | `body` (string), `kind?` (default `status`), `to?`, `in_reply_to?` | the new message id | over-cap body; unknown `in_reply_to`; per-run caps |
+| `chat_post` | `body` (string), `kind?` (default `status`), `to?`, `in_reply_to?` | the new message id | over-cap body; over-long `to`; unknown `in_reply_to`; per-run caps |
 | `chat_read` | `since?`, `before?`, `ids?`, `kind?`, `open_only?`, `limit?` (default 20, max 100) | line-per-message text, ids included | never; empty result is an empty list |
 | `chat_roster` | — | live participants: name · type · busy/idle · joined | never |
 
 - Agents cannot post `system`; only the plugin writes those rows.
+- An explicit `open_only: false` is treated as no filter and takes the consuming unread path
+  when it is the only argument (ratified 0.1.0 behaviour; omit the key to consume).
+- Hydration is lazy (ruling R1: no plugin-side session listing): a session is registered on
+  its first event and its ancestors are walked into the same chat. A tool call that arrives
+  before its session's first event can see `not attached to a chat` once; the next event
+  registers it and the call succeeds.
 - Post caps (#12), enforced at the transport: `maxBodyChars` per post (4,000);
   `maxPostsPerRun` per agent execution run (25, reset each run, system rows excluded); a
   consecutive whitespace-identical post from the same sender in the same run is rejected
   with a reference to the earlier message. An over-limit post tells the agent to wrap up its
-  run and summarize.
+  run and summarize. A run's guard state is created on first use and evicted when the
+  execution ends, so a missed `begin` cannot silently disable the caps.
 - The tool descriptions carry the concise protocol (§9); the full rules are injected.
 
 ## 8. Config
@@ -258,7 +266,8 @@ the human observes.
   bodies wrapped at ~100 columns with continuation lines aligned under the body.
 - Glyphs: `●` status, `?` question, `✓` answer, `!` blocker, `★` finding, `→` join,
   `←` leave.
-- Header: `chat <session> · <live participants> · <n> open`.
+- Header: `chat <session> · <live participants> · <n> open`. The live set seeds `main`, so a
+  chat with no membership rows still names its root.
 - `agent-chat view <session|path>` dumps one chat; a directory or no argument lists chats
   (name, message count, last activity, open questions). `--follow` prints the current view
   once, then appends new messages under a `──── live ────` divider. Control characters are
@@ -271,7 +280,8 @@ the human observes.
 Detail: #16.
 
 - **Unit**: `bun test`, no extra framework. Test files mirror `src/core/` modules (storage,
-  protocol, digest, membership, options, migrations). Each test gets a fresh **temp-file**
+  protocol, digest, membership, options, migrations, render, types), plus a viewer
+  wrap/render contract test. Each test gets a fresh **temp-file**
   SQLite (real WAL and `busy_timeout` behavior; `:memory:` hides it). Timestamps come from an
   injectable `now()`.
 - **Smoke**: `bun run smoke [--scenario chat|config|all]`. Each scenario builds a temp
@@ -279,8 +289,10 @@ Detail: #16.
   `Model unavailable`), mounts the plugin as a directory through the project config with
   `{ chatDir, debug: true }`, and runs
   `opencode2 run --standalone --format json --print-logs --auto --agent <probe-main>` with a
-  prompt that spawns one subagent which posts a `finding` and a `question`, then has main
-  answer. Runs are bounded by `timeout`; exit 124 is acceptable once the plugin has loaded —
+  prompt that spawns one subagent which posts a `finding` and a `question` (>200 characters,
+  ending in a tail marker), then has main read that question by id, list the roster, and
+  answer it. The chat assertions also prove the full question body came back from `chat_read`.
+  Runs are bounded by `timeout`; exit 124 is acceptable once the plugin has loaded —
   assertions decide, and they read **artifacts, never stdout**.
   - `chat`: chat DB exists; kinds/senders/`in_reply_to` chains; join/leave system rows;
     digest injections in `debug.log`; a digest id quoted in the session export; exactly one
@@ -289,7 +301,7 @@ Detail: #16.
     loaded (pins the corrected removal semantics live).
 - **Regression set**: lossless drain (50 unread over repeated digests, no gaps or dupes);
   exactly-once digest (rebuilding without advancing delivers nothing twice); membership
-  reconcile from a session list (right roster, no replay, no synthetic rows); malformed input
+  hydration and reconcile (right roster, no replay, no synthetic rows); malformed input
   (unknown kind, over-cap body, unknown `in_reply_to`, multi-line and `[id]`-lookalike bodies
   that must not forge digest entries); migration idempotence; per-run caps.
 - **The adapter has no unit tests**: it stays branch-free and is guarded by the smoke run.
@@ -318,7 +330,7 @@ Detail: #17, `v2-plugin-packaging.md` §10.
 | npm name | `opencode-agent-chat` |
 | plugin id | `opencode-agent-chat` (must equal the install name; removal `-opencode-agent-chat`) |
 | viewer bin | `agent-chat` |
-| version | `0.1.0` (manual semver from here) |
+| version | `0.1.1` (manual semver; `0.1.0` was the first release) |
 | license | MIT |
 | SDK | `@opencode/plugin` pinned exactly `2.0.8` (bump deliberately, with a smoke run) |
 
@@ -332,7 +344,10 @@ targets into its XDG cache, so nothing is pre-installed by hand. Dev/dogfood use
 path entry (`{"package": "/abs/path"}`); on 2.0.8 a local absolute directory target resolves
 physical `<dir>/server` or `<dir>/index` files and ignores `package.json` `exports`, so the
 repo ships a root `server.ts` re-export shim for the repo-root target. npm installs are
-unaffected: a package target resolves through `exports["./server"]` → `src/plugin.ts`. Release
+unaffected: a package target resolves through `exports["./server"]` → `src/plugin.ts`. The
+published `files` list ships `src/`, `docs/chat-protocol.md`, `README.md` and `LICENSE`;
+`server.ts` is deliberately not shipped, because a directory target pointed into a published
+tarball is not a supported install form. Release
 is manual — bump, tag `vX.Y.Z`, `npm publish`, GitHub release notes. The npm token is a
 granular access token in the user's `~/.npmrc` (`chmod 600`), never in the repo. A `flake.nix`
 devShell is the supported dev environment; Nix packaging of the plugin itself is a follow-up.
@@ -349,7 +364,7 @@ core.
    malformed input.
 4. **Renderer + digest** — shared rendering, caps, cursor advance, join briefing; unit tests
    prove lossless drain and exactly-once delivery.
-5. **Membership** — event handling and startup reconcile; unit tests over synthetic events.
+5. **Membership** — event handling and hydrate-on-first-seen; unit tests over synthetic events.
 6. **Adapter** — `Plugin.define`, event subscription, context hook, tool registration; tools,
    hook, and events visible in `debug.log`.
 7. **Viewer** — `agent-chat` per §10; manual check against a seeded file.

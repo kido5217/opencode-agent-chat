@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { historyCount, latestMessageId, openQuestions, unreadMessages } from "./protocol.ts";
+import { historyCount, latestMessageId, MESSAGE_COLUMNS, openQuestions, unreadMessages } from "./protocol.ts";
 import { INJECTION_HEADER, renderMessageLine, renderMessages, renderOpenQuestions } from "./render.ts";
 import { getCursor, setCursor } from "./storage.ts";
 import type { Message } from "./types.ts";
@@ -8,8 +8,6 @@ export interface Delivery {
   text: string;
   cursorTo: number;
 }
-
-const MESSAGE_COLUMNS = "id, sender_type, sender_name, sender_session, kind, to_name, in_reply_to, body, created_at";
 
 function fitMessages(messages: Message[], maxChars: number): { kept: Message[]; cursorTo: number } {
   const kept: Message[] = [];
@@ -21,6 +19,21 @@ function fitMessages(messages: Message[], maxChars: number): { kept: Message[]; 
     kept.push(m);
   }
   return { kept, cursorTo: kept.at(-1)?.id ?? 0 };
+}
+
+function fitBriefing(messages: Message[], maxChars: number): Message[] {
+  const kept: Message[] = [];
+  let used = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message === undefined) break;
+    const line = renderMessageLine(message);
+    const next = used + (kept.length > 0 ? 1 : 0) + line.length;
+    if (kept.length > 0 && next > maxChars) break;
+    used = next;
+    kept.unshift(message);
+  }
+  return kept;
 }
 
 function compose(body: string, heading: string | null, questions: Message[]): string {
@@ -50,10 +63,11 @@ export function buildJoinBriefing(
     const questions = openQuestions(db);
     const existing = getCursor(db, sessionID);
     setCursor(db, sessionID, existing?.agent_name ?? name, latest, now);
-    if (messages.length === 0) return null;
-    const heading = `Join briefing: ${total} messages total; showing the last ${messages.length}.`;
-    return { text: compose(renderMessages(messages), heading, questions), cursorTo: latest };
-  })();
+    const kept = fitBriefing(messages, limits.maxChars);
+    if (kept.length === 0) return null;
+    const heading = `Join briefing: ${total} messages total; showing the last ${kept.length}.`;
+    return { text: compose(renderMessages(kept), heading, questions), cursorTo: latest };
+  }).immediate();
 }
 
 export function buildDigest(
@@ -71,5 +85,5 @@ export function buildDigest(
     const questions = openQuestions(db);
     setCursor(db, sessionID, cursor?.agent_name ?? name, cursorTo, now);
     return { text: compose(renderMessages(kept), null, questions), cursorTo };
-  })();
+  }).immediate();
 }

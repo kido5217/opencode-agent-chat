@@ -45,32 +45,27 @@ describe("buildDigest", () => {
     expect(d.cursorTo).toBe(ids.at(-1)!);
   });
 
-  test("join briefing shows the last N of the history and parks the cursor at the latest id", () => {
-    const { db } = tempChat();
-    seed(db, 34);
-    const d = buildJoinBriefing(db, "ses_test_0001", "main", limits, 1)!;
-    expect(d.text).toContain("34 messages total");
-    expect(d.text).toContain("showing the last 20");
-    expect(d.cursorTo).toBe(34);
-    expect(buildDigest(db, "ses_test_0001", "main", limits, 2)).toBeNull();
-  });
-
-  test("an empty chat injects nothing but still records the cursor", () => {
-    const { db } = tempChat();
-    expect(buildJoinBriefing(db, "ses_test_0001", "main", limits, 1)).toBeNull();
-    expect(getCursor(db, "ses_test_0001")).not.toBeNull();
-    expect(getCursor(db, "ses_test_0001")?.last_read_id).toBe(0);
-    const m = postMessage(db, { senderName: "main", senderSession: "ses_test_0001", now: 2, maxBodyChars: 4000 }, { body: "hi" });
-    const d = buildDigest(db, "ses_test_0001", "main", limits, 3)!;
-    expect(d.text).toContain(`[${m.id}]`);
-  });
-
   test("questions and blockers are flagged and open questions close", () => {
     const { db } = tempChat();
     const q = postMessage(db, { senderName: "explore", senderSession: "ses_e", now: 1, maxBodyChars: 4000 }, { body: "how?", kind: "question", to: "main" });
     const d = buildDigest(db, "ses_test_0001", "main", limits, 2)!;
     expect(d.text).toContain(`? [${q.id}] explore · question → main: how?`);
     expect(d.text).toContain(`Open questions: #${q.id} (explore)`);
+  });
+
+  test("the open-questions footer caps at five and counts the rest", () => {
+    const { db } = tempChat();
+    seed(db, 3);
+    for (let i = 0; i < 8; i++) {
+      postMessage(
+        db,
+        { senderName: "explore", senderSession: "ses_e", now: 10 + i, maxBodyChars: 4000 },
+        { body: `q${i}`, kind: "question" },
+      );
+    }
+    const d = buildDigest(db, "ses_test_0001", "main", limits, 100)!;
+    expect(d.text).toContain("Open questions: #4 (explore), #5 (explore), #6 (explore), #7 (explore), #8 (explore), +3 more open questions");
+    expect(d.text).not.toContain("#9 (explore)");
   });
 
   test("a body longer than 200 characters is still excerpted at 200 in the digest", () => {
@@ -94,6 +89,40 @@ describe("buildDigest", () => {
       .filter((match): match is RegExpExecArray => match !== null)
       .map((match) => Number(match[1]));
     expect(entryIds).toEqual([lf.id, cr.id]);
+  });
+});
+
+describe("buildJoinBriefing", () => {
+  test("shows the last N of the history and parks the cursor at the latest id", () => {
+    const { db } = tempChat();
+    seed(db, 34);
+    const d = buildJoinBriefing(db, "ses_test_0001", "main", limits, 1)!;
+    expect(d.text).toContain("34 messages total");
+    expect(d.text).toContain("showing the last 20");
+    expect(d.cursorTo).toBe(34);
+    expect(buildDigest(db, "ses_test_0001", "main", limits, 2)).toBeNull();
+  });
+
+  test("honours maxChars while keeping the newest messages", () => {
+    const { db } = tempChat();
+    const ids = seed(db, 20);
+    const d = buildJoinBriefing(db, "ses_test_0001", "main", { maxMessages: 20, maxChars: 200 }, 1)!;
+    const newest = Number(ids.at(-1));
+    const seen = [...d.text.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1]));
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.length).toBeLessThan(20);
+    expect(seen.at(-1)).toBe(newest);
+    expect(d.cursorTo).toBe(newest);
+  });
+
+  test("an empty chat injects nothing but still records the cursor", () => {
+    const { db } = tempChat();
+    expect(buildJoinBriefing(db, "ses_test_0001", "main", limits, 1)).toBeNull();
+    expect(getCursor(db, "ses_test_0001")).not.toBeNull();
+    expect(getCursor(db, "ses_test_0001")?.last_read_id).toBe(0);
+    const m = postMessage(db, { senderName: "main", senderSession: "ses_test_0001", now: 2, maxBodyChars: 4000 }, { body: "hi" });
+    const d = buildDigest(db, "ses_test_0001", "main", limits, 3)!;
+    expect(d.text).toContain(`[${m.id}]`);
   });
 });
 

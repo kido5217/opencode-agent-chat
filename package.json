@@ -1,6 +1,6 @@
 {
   "name": "opencode-agent-chat",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shared agent chat for opencode v2 sessions",
   "type": "module",
   "license": "MIT",
@@ -22,6 +22,6 @@
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",
-    "typescript": "^7.0.2"
+    "typescript": "7.0.2"
   }
 }

@@ -44,7 +44,7 @@ describe("postMessage", () => {
     const { db } = tempChat();
     expect(() => postMessage(db, meta(), { body: "x", kind: "nope" as any })).toThrow(ChatError);
     expect(() => postMessage(db, meta(), { body: "x", kind: "system" })).toThrow(ChatError);
-    try { postMessage(db, meta(), { body: "x", kind: "system" }); } catch (e) { expect((e as ChatError).code).toBe("unknown_kind"); }
+    try { postMessage(db, meta(), { body: "x", kind: "system" }); expect.unreachable(); } catch (e) { expect((e as ChatError).code).toBe("unknown_kind"); }
   });
   test("system sender may post system rows", () => {
     const { db } = tempChat();
@@ -54,7 +54,7 @@ describe("postMessage", () => {
   test("replying to a missing message is rejected", () => {
     const { db } = tempChat();
     expect(() => postMessage(db, meta(), { body: "x", kind: "answer", in_reply_to: 99 })).toThrow(ChatError);
-    try { postMessage(db, meta(), { body: "x", kind: "answer", in_reply_to: 99 }); } catch (e) { expect((e as ChatError).code).toBe("unknown_reply"); }
+    try { postMessage(db, meta(), { body: "x", kind: "answer", in_reply_to: 99 }); expect.unreachable(); } catch (e) { expect((e as ChatError).code).toBe("unknown_reply"); }
   });
 });
 
@@ -73,6 +73,12 @@ describe("reads", () => {
     seed(db, 5);
     expect(readMessages(db, { ids: [] })).toEqual([]);
     expect(readMessages(db, { limit: 0 }).map((m) => m.id)).toEqual([1]);
+  });
+  test("a non-integer limit truncates instead of falling back", () => {
+    const { db } = tempChat();
+    const ids = seed(db, 30);
+    expect(readMessages(db, { limit: 5.5 }).map((m) => m.id)).toEqual(ids.slice(0, 5));
+    expect(readMessages(db, { limit: Number.NaN }).length).toBe(20);
   });
   test("readMessages filters by kind and combines it with since", () => {
     const { db } = tempChat();
@@ -158,13 +164,21 @@ describe("RunGuard", () => {
     guard.begin("s1");
     guard.check("s1", "x");
   });
-  test("sessions are tracked independently and unbegun sessions are unchecked", () => {
+  test("sessions are tracked independently and a missed begin still enforces the cap", () => {
     const guard = new RunGuard(1);
     guard.begin("s1");
     guard.check("s1", "x"); guard.record("s1", "x", 1);
     guard.begin("s2");
     guard.check("s2", "x");
-    guard.check("never-begun", "x");
     expect(() => guard.check("s1", "y")).toThrow(ChatError);
+    guard.check("lazy", "a"); guard.record("lazy", "a", 2);
+    expect(() => guard.check("lazy", "b")).toThrow(ChatError);
+  });
+  test("end evicts the run so the next check starts fresh", () => {
+    const guard = new RunGuard(1);
+    guard.begin("s1");
+    guard.check("s1", "x"); guard.record("s1", "x", 1);
+    guard.end("s1");
+    guard.check("s1", "y");
   });
 });

@@ -17,13 +17,14 @@ const ROSTER_DESC =
   "List the agents currently connected to this session's chat, with name, agent type, and busy/idle status.";
 
 const KINDS = [...AGENT_KINDS];
+const MAX_TO_CHARS = 100;
 
 const POST_SCHEMA = {
   type: "object",
   properties: {
     body: { type: "string" },
     kind: { type: "string", enum: KINDS },
-    to: { type: "string" },
+    to: { type: "string", maxLength: MAX_TO_CHARS },
     in_reply_to: { type: "integer" },
   },
   required: ["body"],
@@ -111,28 +112,32 @@ export default Plugin.define({
 
     const seen = new Set<string>();
     const hydrate = async (sessionID: string): Promise<void> => {
-      if (seen.has(sessionID)) return;
-      try {
-        const info = await ctx.session.get({ sessionID });
-        membership.sessionCreated({ id: info.id, parentID: info.parentID, agentType: info.agent });
-        seen.add(sessionID);
-        log(
-          `session hydrated ${sessionID}${info.parentID === undefined ? " (root)" : ` parent=${info.parentID}`}`,
-        );
-      } catch (err) {
-        log(`session hydrate failed ${sessionID}: ${String(err)}`);
+      let id: string | undefined = sessionID;
+      while (id !== undefined && !seen.has(id)) {
+        try {
+          const info = await ctx.session.get({ sessionID: id });
+          membership.sessionCreated({ id: info.id, parentID: info.parentID, agentType: info.agent });
+          seen.add(id);
+          log(`session hydrated ${id}${info.parentID == null ? " (root)" : ` parent=${info.parentID}`}`);
+          id = info.parentID ?? undefined;
+        } catch (err) {
+          log(`session hydrate failed ${id}: ${String(err)}`);
+          return;
+        }
       }
     };
 
+    const abort = new AbortController();
     void (async () => {
       try {
-        for await (const ev of ctx.event.subscribe()) {
+        for await (const ev of ctx.event.subscribe({ signal: abort.signal })) {
           try {
             if (ev.type === "session.created") {
               const { sessionID, parentID, agent } = ev.data;
               membership.sessionCreated({ id: sessionID, parentID, agentType: agent });
               seen.add(sessionID);
               log(`session created ${sessionID}${parentID === undefined ? " (root)" : ` parent=${parentID}`}`);
+              if (parentID !== undefined && parentID !== null) await hydrate(parentID);
               continue;
             }
             const data = ev.data as { sessionID?: unknown };
@@ -146,14 +151,17 @@ export default Plugin.define({
                 log(`join ${membership.nameFor(sessionID) ?? sessionID} (${sessionID})`);
                 break;
               case "session.execution.succeeded":
+                guard.end(sessionID);
                 membership.executionEnded(sessionID, "completed");
                 log(`leave ${membership.nameFor(sessionID) ?? sessionID} (completed)`);
                 break;
               case "session.execution.failed":
+                guard.end(sessionID);
                 membership.executionEnded(sessionID, "failed");
                 log(`leave ${membership.nameFor(sessionID) ?? sessionID} (failed)`);
                 break;
               case "session.execution.interrupted":
+                guard.end(sessionID);
                 membership.executionEnded(sessionID, "interrupted");
                 log(`leave ${membership.nameFor(sessionID) ?? sessionID} (interrupted)`);
                 break;
@@ -192,6 +200,7 @@ export default Plugin.define({
     });
 
     await ctx.tool.transform((editor) => {
+      editor.namespace({ name: "chat", description: "Shared chat between this session's agents" });
       editor.add({
         name: "post",
         description: POST_DESC,
@@ -205,6 +214,9 @@ export default Plugin.define({
           const db = openDb(root);
           const name = membership.nameFor(sessionID) ?? "unknown";
           const to = typeof post.to === "string" && post.to.length > 0 ? post.to : null;
+          if (to !== null && to.length > MAX_TO_CHARS) {
+            throw new Error(`agent-chat: to is ${to.length} characters; the cap is ${MAX_TO_CHARS}`);
+          }
           try {
             guard.check(sessionID, post.body);
             const message = postMessage(
@@ -288,5 +300,10 @@ export default Plugin.define({
     });
 
     log("plugin loaded");
+    return () => {
+      abort.abort();
+      for (const db of dbs.values()) db.close();
+      dbs.clear();
+    };
   },
 });

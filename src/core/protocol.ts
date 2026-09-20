@@ -37,7 +37,7 @@ export interface ReadQuery {
   limit?: number;
 }
 
-const MESSAGE_COLUMNS = "id, sender_type, sender_name, sender_session, kind, to_name, in_reply_to, body, created_at";
+export const MESSAGE_COLUMNS = "id, sender_type, sender_name, sender_session, kind, to_name, in_reply_to, body, created_at";
 const OPEN_QUESTION_PREDICATE =
   "kind = 'question' AND NOT EXISTS (SELECT 1 FROM messages a WHERE a.in_reply_to = messages.id AND a.kind = 'answer')";
 
@@ -45,8 +45,8 @@ const DEFAULT_READ_LIMIT = 20;
 const MAX_READ_LIMIT = 100;
 
 function clampLimit(limit: number | undefined): number {
-  if (typeof limit !== "number" || !Number.isInteger(limit)) return DEFAULT_READ_LIMIT;
-  return Math.min(MAX_READ_LIMIT, Math.max(1, limit));
+  if (typeof limit !== "number" || Number.isNaN(limit)) return DEFAULT_READ_LIMIT;
+  return Math.min(MAX_READ_LIMIT, Math.max(1, Math.trunc(limit)));
 }
 
 export function postMessage(db: Database, meta: PostMeta, post: PostInput): Message {
@@ -77,7 +77,9 @@ export function postMessage(db: Database, meta: PostMeta, post: PostInput): Mess
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(meta.senderType ?? "agent", meta.senderName, meta.senderSession, kind, post.to ?? null, inReplyTo, body, meta.now);
-  return getMessage(db, Number(info.lastInsertRowid)) as Message;
+  const created = getMessage(db, Number(info.lastInsertRowid));
+  if (created === null) throw new Error("agent-chat: inserted message could not be read back");
+  return created;
 }
 
 export function readMessages(db: Database, q: ReadQuery = {}): Message[] {
@@ -161,9 +163,12 @@ export class RunGuard {
     this.runs.set(sessionID, { count: 0, lastBody: null, lastId: 0 });
   }
 
+  end(sessionID: string): void {
+    this.runs.delete(sessionID);
+  }
+
   check(sessionID: string, body: string): void {
-    const run = this.runs.get(sessionID);
-    if (run === undefined) return;
+    const run = this.state(sessionID);
     if (run.count >= this.maxPostsPerRun) {
       throw new ChatError(
         "too_many_posts",
@@ -179,10 +184,18 @@ export class RunGuard {
   }
 
   record(sessionID: string, body: string, messageID: number): void {
-    const run = this.runs.get(sessionID);
-    if (run === undefined) return;
+    const run = this.state(sessionID);
     run.count += 1;
     run.lastBody = normalize(body);
     run.lastId = messageID;
+  }
+
+  private state(sessionID: string): RunState {
+    let run = this.runs.get(sessionID);
+    if (run === undefined) {
+      run = { count: 0, lastBody: null, lastId: 0 };
+      this.runs.set(sessionID, run);
+    }
+    return run;
   }
 }

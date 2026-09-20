@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { AGENT_KINDS, ALL_KINDS, isKind } from "../src/core/types.ts";
+import { AGENT_KINDS, ALL_KINDS, isKind, type Kind } from "../src/core/types.ts";
 
 describe("kind vocabulary", () => {
   test("agent kinds are the six protocol kinds in order", () => {
@@ -13,5 +13,11 @@ describe("kind vocabulary", () => {
     expect(isKind("question")).toBe(true);
     expect(isKind("system")).toBe(true);
     expect(isKind("nope")).toBe(false);
+  });
+  test("isKind narrows an unknown value to Kind at compile time", () => {
+    const value: string = "blocker";
+    if (!isKind(value)) throw new Error("expected isKind to accept a protocol kind");
+    const kind: Kind = value;
+    expect(kind).toBe("blocker");
   });
 });

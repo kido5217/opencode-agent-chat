@@ -61,7 +61,12 @@ export function openChat(
   } else {
     writeFileSync(path, "", { mode: 0o600 });
   }
-  chmodSync(path, 0o600);
+  try {
+    chmodSync(path, 0o600);
+  } catch (err) {
+    warn(`agent-chat: could not enforce 0600 on ${path}: ${String(err)}`);
+    throw new Error(`agent-chat: refusing to open chat file with wrong permissions ${path}: ${String(err)}`);
+  }
   const db = new Database(path, { create: true });
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA busy_timeout = 5000");
@@ -101,9 +106,4 @@ export function setCursor(db: Database, sessionID: string, name: string, lastRea
        last_read_id = excluded.last_read_id,
        updated_at = excluded.updated_at`,
   ).run(sessionID, name, lastReadId, now);
-}
-
-export function messageCount(db: Database): number {
-  const row = db.query("SELECT COUNT(*) AS n FROM messages").get() as { n: number };
-  return row.n;
 }
