@@ -40,6 +40,10 @@ _Avoid_: Offset, watermark, pointer
 The compact unread summary injected into a participant's context at its next model request.
 _Avoid_: Inbox, notification, feed
 
+**Join briefing**:
+The first digest a participant receives after joining a chat: recent messages, open questions, and a history count; the participant's cursor starts at the latest message.
+_Avoid_: Welcome message, backlog, catch-up
+
 **Roster**:
 The set of participants currently connected to a chat.
 _Avoid_: Member list, presence, directory
