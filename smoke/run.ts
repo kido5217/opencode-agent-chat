@@ -3,12 +3,14 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFile
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { sanitize } from "../src/core/render.ts";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const HOST_DATA = join(homedir(), ".local", "share", "opencode");
 const HOST_DB = join(HOST_DATA, "opencode.db");
 const HOST_AUTH = join(HOST_DATA, "auth.json");
 const MODEL = "deepseek/deepseek-flash";
+const SMOKE_TAIL = "SMOKE-TAIL-7f3a";
 const BOOTSTRAP_TIMEOUT_S = 120;
 const CHAT_TIMEOUT_S = 600;
 const CONFIG_TIMEOUT_S = 180;
@@ -35,13 +37,17 @@ You are probe-child, a minimal test agent. Follow the user's instructions exactl
 
 const CHAT_PROMPT = `This is an automated smoke test. Follow these steps exactly, in order.
 
-Step 1: Call the subagent tool exactly once with agent "probe-child", description "post chat finding and question", and prompt: "Call the chat_post tool exactly twice, in order: first with kind \\"finding\\" and body \\"SMOKE-FINDING: the harness reaches the child session\\"; second with kind \\"question\\" and body \\"SMOKE-QUESTION: does the parent answer this?\\". Do not call any other tool. Then reply with exactly CHILD-DONE." Wait until the subagent finishes before doing anything else.
+Step 1: Call the subagent tool exactly once with agent "probe-child", description "post chat finding and question", and prompt: "Call the chat_post tool exactly twice, in order: first with kind \\"finding\\" and body \\"SMOKE-FINDING: the harness reaches the child session\\"; second with kind \\"question\\" and a body that starts with exactly \\"SMOKE-QUESTION: does the parent answer this? \\", continues with the letter \\"a\\" repeated 250 times, and ends with exactly \\"${SMOKE_TAIL}\\". Do not call any other tool. Then reply with exactly CHILD-DONE." Wait until the subagent finishes before doing anything else.
 
 Step 2: A digest of the agent chat is injected into your context as text. It lists messages as "[<id>] <name> - <kind>: <text>" and has a line "Open questions: #<id> (<name>)". Find the open question posted by probe-child and note its numeric id N.
 
-Step 3: Call the chat_post tool exactly once with arguments {"kind":"answer","body":"SMOKE-ANSWER: answering question N","in_reply_to":N}, where N is the numeric id you found.
+Step 3: Call the chat_read tool exactly once with arguments {"ids":[N]}, where N is the numeric id you found. This returns the full text of that message.
 
-Step 4: Reply with exactly one line and nothing else: QUESTION_ID=<N>
+Step 4: Call the chat_roster tool exactly once with arguments {}.
+
+Step 5: Call the chat_post tool exactly once with arguments {"kind":"answer","body":"SMOKE-ANSWER: answering question N","in_reply_to":N}, where N is the numeric id you found.
+
+Step 6: Reply with exactly one line and nothing else: QUESTION_ID=<N>
 `;
 
 const CONFIG_PROMPT = "reply with the single word ok";
@@ -87,9 +93,24 @@ interface Delivery {
   cursor: number;
 }
 
+interface ExportToolCall {
+  tool?: string;
+  status?: string;
+  input?: unknown;
+}
+
+interface ExportToolState {
+  status?: string;
+  input?: unknown;
+  content?: ExportPart[];
+  metadata?: { toolCalls?: ExportToolCall[] };
+}
+
 interface ExportPart {
   type: string;
   text?: string;
+  name?: string;
+  state?: ExportToolState;
 }
 
 interface ExportMessage {
@@ -296,6 +317,31 @@ function assistantText(data: ExportData): string {
   return parts.join("\n");
 }
 
+function toolInvocations(data: ExportData, name: string): { input: unknown; outputs: string[] }[] {
+  const target = name.replace(/\./g, "_");
+  const invocations: { input: unknown; outputs: string[] }[] = [];
+  for (const message of data.messages) {
+    if (message.type !== "assistant") continue;
+    for (const part of message.content ?? []) {
+      if (part.type !== "tool" || part.state?.status !== "completed") continue;
+      const outputs: string[] = [];
+      for (const item of part.state.content ?? []) {
+        if (item.type === "text" && typeof item.text === "string") outputs.push(item.text);
+      }
+      if (part.name?.replace(/\./g, "_") === target) invocations.push({ input: part.state.input, outputs });
+      for (const call of part.state.metadata?.toolCalls ?? []) {
+        if (call.status !== "completed" || call.tool?.replace(/\./g, "_") !== target) continue;
+        invocations.push({ input: call.input, outputs });
+      }
+    }
+  }
+  return invocations;
+}
+
+function toolOutputs(invocations: { input: unknown; outputs: string[] }[]): string[] {
+  return invocations.flatMap((invocation) => invocation.outputs);
+}
+
 async function chatScenario(): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), "agent-chat-smoke-chat-"));
   const chatsDir = join(root, "chats");
@@ -396,6 +442,43 @@ async function chatScenario(): Promise<void> {
   assert(
     quotedID === question.id,
     `session export ${exportPath} quotes QUESTION_ID=${quotedID} but the open question row is #${question.id}`,
+  );
+
+  const rangedRead = toolInvocations(transcript, "chat_read").some((invocation) => {
+    const input = invocation.input as { ids?: unknown } | undefined;
+    return Array.isArray(input?.ids) && input.ids.includes(question.id);
+  });
+  assert(
+    rangedRead,
+    `session export ${exportPath} has no completed chat_read call with ids containing the question id #${question.id}`,
+  );
+  const readOutputs = toolOutputs(toolInvocations(transcript, "chat_read"));
+  assert(
+    readOutputs.length > 0,
+    `session export ${exportPath} has no completed chat_read output`,
+  );
+  assert(
+    question.body.length > 200,
+    `probe-child's question body is ${question.body.length} characters; the smoke needs more than 200 to prove full-body reads`,
+  );
+  assert(
+    question.body.endsWith(SMOKE_TAIL),
+    `probe-child's question body does not end with ${SMOKE_TAIL}; the read tail cannot be checked`,
+  );
+  const fullBody = sanitize(question.body);
+  assert(
+    readOutputs.some((output) => output.includes(fullBody)),
+    `chat_read returned no output containing the full ${fullBody.length}-character question body; the read was excerpted or read the wrong id`,
+  );
+
+  const rosterOutputs = toolOutputs(toolInvocations(transcript, "chat_roster"));
+  assert(
+    rosterOutputs.length > 0,
+    `session export ${exportPath} has no completed chat_roster output`,
+  );
+  assert(
+    rosterOutputs.some((output) => /main · [^·\n]+ · (busy|idle) · joined \d{4}-\d{2}-\d{2}T/.test(output)),
+    `chat_roster output does not name main with type and joined time: ${JSON.stringify(rosterOutputs)}`,
   );
 }
 

@@ -6,7 +6,7 @@ import { Membership } from "./core/membership.ts";
 import { parseOptions } from "./core/options.ts";
 import { ChatError, postMessage, readMessages, RunGuard, unreadMessages } from "./core/protocol.ts";
 import { INJECTION_HEADER, renderMessages, renderRoster } from "./core/render.ts";
-import { debugLog, getCursor, openChat, setCursor } from "./core/storage.ts";
+import { debugLog, ensureChatDir, getCursor, openChat, setCursor } from "./core/storage.ts";
 import { AGENT_KINDS, type Kind, type Message } from "./core/types.ts";
 
 const POST_DESC =
@@ -74,12 +74,17 @@ export default Plugin.define({
       if (options.debug) debugLog(options.chatDir, line);
     };
     for (const w of warnings) log(`option warning: ${w}`);
+    try {
+      ensureChatDir(options.chatDir, log);
+    } catch (err) {
+      log(`agent-chat: could not create chat directory ${options.chatDir}: ${String(err)}`);
+    }
 
     const dbs = new Map<string, Database>();
     const openDb = (root: string): Database => {
       let db = dbs.get(root);
       if (db === undefined) {
-        db = openChat(options.chatDir, root);
+        db = openChat(options.chatDir, root, log);
         dbs.set(root, db);
       }
       return db;
@@ -176,15 +181,13 @@ export default Plugin.define({
       const name = membership.nameFor(sessionID) ?? "unknown";
       const limits = { maxMessages: options.digestMaxMessages, maxChars: options.digestMaxChars };
       const now = Date.now();
-      const delivery =
-        getCursor(db, sessionID) !== null
-          ? buildDigest(db, sessionID, name, limits, now)
-          : buildJoinBriefing(db, sessionID, name, limits, now);
+      const joinBriefing = getCursor(db, sessionID) === null;
+      const delivery = joinBriefing
+        ? buildJoinBriefing(db, sessionID, name, limits, now)
+        : buildDigest(db, sessionID, name, limits, now);
       if (delivery !== null) {
         event.system.push({ type: "text", text: delivery.text });
-        log(
-          `${delivery.text.includes("Join briefing") ? "briefing" : "digest"} ${sessionID} cursor=${delivery.cursorTo}`,
-        );
+        log(`${joinBriefing ? "briefing" : "digest"} ${sessionID} cursor=${delivery.cursorTo}`);
       }
     });
 
@@ -261,7 +264,9 @@ export default Plugin.define({
               setCursor(db, sessionID, membership.nameFor(sessionID) ?? "unknown", last.id, Date.now());
             }
           }
-          return { content: messages.length === 0 ? "" : `${INJECTION_HEADER}\n${renderMessages(messages)}` };
+          return {
+            content: messages.length === 0 ? "" : `${INJECTION_HEADER}\n${renderMessages(messages, options.maxBodyChars)}`,
+          };
         },
       });
       editor.add({

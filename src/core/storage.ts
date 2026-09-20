@@ -38,8 +38,12 @@ export function chatFilePath(chatDir: string, sessionID: string): string {
   return path;
 }
 
-export function openChat(chatDir: string, sessionID: string): Database {
-  ensureChatDir(chatDir);
+export function openChat(
+  chatDir: string,
+  sessionID: string,
+  warn: (msg: string) => void = () => {},
+): Database {
+  ensureChatDir(chatDir, warn);
   const path = chatFilePath(chatDir, sessionID);
   let stat: Stats | null = null;
   try {

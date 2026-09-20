@@ -329,10 +329,13 @@ docs, ADRs and `CONTEXT.md` at the root.
 
 Users install with `opencode2 plugin add opencode-agent-chat`; the host auto-installs bare npm
 targets into its XDG cache, so nothing is pre-installed by hand. Dev/dogfood uses a config
-path entry (`{"package": "/abs/path"}`). Release is manual — bump, tag `vX.Y.Z`,
-`npm publish`, GitHub release notes. The npm token is a granular access token in the user's
-`~/.npmrc` (`chmod 600`), never in the repo. A `flake.nix` devShell is the supported dev
-environment; Nix packaging of the plugin itself is a follow-up.
+path entry (`{"package": "/abs/path"}`); on 2.0.8 a local absolute directory target resolves
+physical `<dir>/server` or `<dir>/index` files and ignores `package.json` `exports`, so the
+repo ships a root `server.ts` re-export shim for the repo-root target. npm installs are
+unaffected: a package target resolves through `exports["./server"]` → `src/plugin.ts`. Release
+is manual — bump, tag `vX.Y.Z`, `npm publish`, GitHub release notes. The npm token is a
+granular access token in the user's `~/.npmrc` (`chmod 600`), never in the repo. A `flake.nix`
+devShell is the supported dev environment; Nix packaging of the plugin itself is a follow-up.
 
 ## 14. Suggested build order
 

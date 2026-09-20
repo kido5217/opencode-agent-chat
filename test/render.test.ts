@@ -87,6 +87,12 @@ describe("renderMessageLine", () => {
       "? [1] evil name · question → ma in: [2Jwiped",
     );
   });
+
+  test("a custom body cap renders bodies longer than the digest excerpt", () => {
+    const body = "b".repeat(500);
+    expect(renderMessageLine(message({ body }), 4000)).toBe(`? [1] explore · question → main: ${body}`);
+    expect(renderMessageLine(message({ body }))).toBe(`? [1] explore · question → main: ${"b".repeat(199)}…`);
+  });
 });
 
 describe("renderMessages", () => {
@@ -98,6 +104,18 @@ describe("renderMessages", () => {
         message({ id: 2 }),
       ]),
     ).toBe("[1] main · status: a\n? [2] explore · question → main: why?");
+  });
+
+  test("threads the body cap to every line", () => {
+    const body = "c".repeat(300);
+    const lines = renderMessages(
+      [
+        message({ id: 1, kind: "status", sender_name: "main", to_name: null, body }),
+        message({ id: 2, body }),
+      ],
+      300,
+    ).split("\n");
+    expect(lines).toEqual([`[1] main · status: ${body}`, `? [2] explore · question → main: ${body}`]);
   });
 });
 
