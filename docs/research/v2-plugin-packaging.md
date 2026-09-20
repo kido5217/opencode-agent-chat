@@ -269,12 +269,25 @@ Read at tag v2.0.8: `packages/core/src/config/plugin/source.ts`, `packages/core/
   `{ type: "remove", target: input.slice(1) }`; a bare `"-"` throws
   `Plugin remove operation requires a target`. Operations are ordered `[...discovered, ...configured]`
   and the source comment says explicit config is applied last "so it can remove auto-discovered
-  packages". `"plugins": ["-agent-chat"]` in a project config can therefore cancel a globally
-  configured or auto-discovered plugin. Matching is on the resolved target, so the removal string
-  must resolve to the same target as the add (a relative path resolves against the removing
-  document's own directory — a global `./dir` add and a project `-./dir` removal resolve differently).
+  packages".
 - **Options arrive only with an add entry.** Object entries `{package, options}` pass `options`
   verbatim; auto-discovered targets and string-add entries get `{}`.
-- **UNVERIFIED:** the add/remove conflict consumer (which operation wins when both exist for one
-  target) was read in source only. Ticket #16's smoke loop should probe: global add + project
-  remove, and removal of an auto-discovered directory target.
+- **Correction — removal matches the plugin definition id, not the add target.**
+  `packages/core/src/plugin/supervisor.ts` `resolve()` folds the operations in order over an
+  `enabled` id set. For a remove it calls `matches(operation.target, plugin.id)` against every
+  loaded plugin's **definition id** (the `id` in its default export) and drops the match from
+  `enabled`. Two wildcards exist: `*` (all plugins, and it clears the failure records) and
+  `prefix.*` (id prefix). The removal string is passed through raw (`input.slice(1)`), so a path
+  like `-./dir` is matched as a literal id and cannot cancel a directory add; `-agent-chat`
+  cancels whichever plugin's definition id is `agent-chat`. The earlier "matching is on the
+  resolved target" claim was wrong.
+- **Ordering consequence.** Configured operations are applied after discovered ones, in config
+  document order (global, then project), so a project `"plugins": ["-agent-chat"]` cancels a
+  global add or an auto-discovered plugin whose definition id is `agent-chat`. An add whose target
+  string equals an already-present plugin id only re-enables it (no reload, and its options are
+  ignored); an add under a different target string for the same definition id loads a second
+  generation whose duplicate id then fails setup — consistent with the double-load observation in
+  §3. Keep the plugin's definition id equal to the install name so add/remove strings align.
+- **Still worth a live probe (ticket #16):** end-to-end global add + project remove, since config
+  document ordering and the two-pass resolve (`install: false`, then `install: true`) are
+  source-read only.
