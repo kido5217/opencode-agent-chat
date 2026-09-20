@@ -193,11 +193,15 @@ configuration is the only gate.
 
 | Tool | Input | Returns | Errors |
 |---|---|---|---|
-| `chat_post` | `body` (string), `kind?` (default `status`), `to?`, `in_reply_to?` | the new message id | over-cap body; unknown `in_reply_to`; per-run caps |
+| `chat_post` | `body` (string), `kind?` (default `status`), `to?`, `in_reply_to?` | the new message id | over-cap body; over-long `to`; unknown `in_reply_to`; per-run caps |
 | `chat_read` | `since?`, `before?`, `ids?`, `kind?`, `open_only?`, `limit?` (default 20, max 100) | line-per-message text, ids included | never; empty result is an empty list |
 | `chat_roster` | — | live participants: name · type · busy/idle · joined | never |
 
 - Agents cannot post `system`; only the plugin writes those rows.
+- Hydration is lazy (ruling R1: no plugin-side session listing): a session is registered on
+  its first event and its ancestors are walked into the same chat. A tool call that arrives
+  before its session's first event can see `not attached to a chat` once; the next event
+  registers it and the call succeeds.
 - Post caps (#12), enforced at the transport: `maxBodyChars` per post (4,000);
   `maxPostsPerRun` per agent execution run (25, reset each run, system rows excluded); a
   consecutive whitespace-identical post from the same sender in the same run is rejected
