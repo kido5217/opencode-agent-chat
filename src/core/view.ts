@@ -76,6 +76,13 @@ export function fitField(text: string, max: number): string {
   return chars.length <= max ? text : `${chars.slice(0, max - 1).join("")}…`;
 }
 
+export function renderTranscript(messages: Message[], open: number, sessionID: string): string {
+  const lines = [headerLine(sessionID, messages, open)];
+  const idWidth = messageIdWidth(messages);
+  for (const message of messages) lines.push(renderMessage(message, idWidth));
+  return lines.join("\n");
+}
+
 export function renderMessage(message: Message, idWidth: number): string {
   const head = `${clock(message.created_at)} [${String(message.id).padStart(idWidth)}]`;
   let prefix: string;

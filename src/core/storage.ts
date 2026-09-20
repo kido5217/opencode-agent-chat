@@ -38,6 +38,19 @@ export function chatFilePath(chatDir: string, sessionID: string): string {
   return path;
 }
 
+export function openChatReadonly(path: string): Database {
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink()) {
+    throw new Error(`agent-chat: refusing symlinked chat file ${path}`);
+  }
+  if (!stat.isFile()) {
+    throw new Error(`agent-chat: refusing non-regular chat file ${path}`);
+  }
+  const db = new Database(path, { readonly: true });
+  db.exec("PRAGMA busy_timeout = 5000");
+  return db;
+}
+
 export function openChat(
   chatDir: string,
   sessionID: string,

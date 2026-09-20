@@ -32,13 +32,14 @@ auto-wake; cross-project or cross-session chat; human posting; adopting sibling 
 
 ## 2. Architecture
 
-Three pieces, one dependency direction: core ← adapter, core ← viewer.
+Four pieces, one dependency direction: core ← adapter, core ← viewer, core ← TUI entry.
 
 | Piece | Path | Responsibility |
 |---|---|---|
-| Core | `src/core/` | Pure TypeScript: storage, message protocol, digest, membership, options, migrations. No opencode imports; `bun:sqlite` is the only runtime dependency. |
-| Adapter | `src/plugin.ts` | The installed plugin. Wires opencode into core: event subscription, context-hook injection, tool registration. Thin and branch-free. |
+| Core | `src/core/` | Pure TypeScript: storage, message protocol, digest, membership, options, migrations, transcript. No opencode imports; `bun:sqlite` is the only runtime dependency. |
+| Adapter | `src/plugin.ts` | The installed plugin. Wires opencode into core: event subscription, context-hook injection, synthetic-transcript filtering, tool registration. Thin and branch-free. |
 | Viewer | `src/cli.ts` | `agent-chat` CLI. Reads chat files directly; never imports the plugin. |
+| TUI entry | `src/tui.ts` | The in-TUI `/agent-chat` command. Resolves the active session's root chat and appends its transcript through `client.session.synthetic`. Thin adapter over `src/core/transcript.ts`. |
 
 Runtime facts that shape this (all verified in `docs/research/`):
 
@@ -52,6 +53,9 @@ Runtime facts that shape this (all verified in `docs/research/`):
   transcript, so injections are regenerated every request (`v2-context-hook.md`).
 - `session.inbox.*` is opencode's own prompt-admission queue. We do not fight or mirror it;
   we own our storage and viewer (`v2-session-inbox.md`).
+- The TUI plugin entry (`@opencode/plugin/tui`) can register a slash command that runs local
+  code; the keymap layer must be registered from an `app` slot render (a Solid owner), and
+  TUI options arrive only through `cli.json` (`020-tui-command-surface.md`).
 
 Flow for one message: an agent calls `chat_post` → core appends a row → (no push). At each
 agent's next model request the adapter asks core for that participant's digest → core renders
@@ -186,6 +190,13 @@ runs, strips C0 controls including ESC, and truncates excerpts — message text 
 neither digest structure nor a terminal. Injections are system text, never a fabricated user
 turn.
 
+**Synthetic transcripts** (0.2.0): the in-TUI `/agent-chat` command appends a transcript
+through `client.session.synthetic`. Its required model-facing half is neutralized by the
+adapter: it remembers admission ids from `session.inbox.enqueued` (`item.type === "synthetic"`,
+`metadata.source === "agent-chat"`) and splices matching messages out of the context hook's
+message list (`ContextFilter`, bounded to 1,000 ids). Metadata tags are dropped from the LLM
+message, so the filter keys on the id.
+
 ## 7. Tools
 
 Three tools in the `chat` namespace (#11), registered with `ctx.tool.transform` and
@@ -276,6 +287,17 @@ the human observes.
 - Prototype on branch `prototype/minimal-viewer` (`prototype/minimal-viewer.ts`,
   `prototype/seed-demo.ts`) is the visual reference, not code to keep.
 
+**In-TUI command (0.2.0).** `/agent-chat` renders the active session's root chat through
+`src/core/transcript.ts` and appends it with `client.session.synthetic({ sessionID, text,
+description, resume: false })` — the verified route (`020-synthetic-route.md`): the transcript
+rides in `description` as one subdued `◈` notice, no model turn starts, and the notice persists
+in the transcript and in `session export`. The notice wrapper prevents byte-identical chrome;
+the text itself is line-for-line the viewer's. The TUI entry registers its keymap layer from an
+`app` slot render (a Solid owner; a layer registered directly in `setup` registered nothing on
+2.0.8) and reads `chatDir` from its own `cli.json` options — `opencode.json` plugin options do
+not reach the TUI layer. A fullscreen `session.panel` remains the fallback surface if the notice
+proves unusable for long chats.
+
 ## 11. Testing and smoke loop
 
 Detail: #16.
@@ -336,18 +358,19 @@ Detail: #17, `v2-plugin-packaging.md` §10.
 | SDK | `@opencode/plugin` allowed the `~2.0.8` range (floor `2.0.8`); the dev lock stays at the floor, and each release re-proves the top of the range (scratch-worktree bump → `bun test` + typecheck, recorded on the release ticket) |
 
 Root-as-package layout (no monorepo): `src/plugin.ts` (adapter), `src/core/` (pure core),
-`src/cli.ts` (viewer), `test/` mirrors core, `smoke/` scenarios, `flake.nix` devShell,
-`docs/chat-protocol.md` shipped via `files` (imported with Bun's `{ type: "text" }`), design
-docs, ADRs and `CONTEXT.md` at the root.
+`src/cli.ts` (viewer), `src/tui.ts` (TUI entry), `test/` mirrors core, `smoke/` scenarios,
+`flake.nix` devShell, `docs/chat-protocol.md` shipped via `files` (imported with Bun's
+`{ type: "text" }`), design docs, ADRs and `CONTEXT.md` at the root.
 
 Users install with `opencode2 plugin add opencode-agent-chat`; the host auto-installs bare npm
 targets into its XDG cache, so nothing is pre-installed by hand. Dev/dogfood uses a config
 path entry (`{"package": "/abs/path"}`); on 2.0.8 a local absolute directory target resolves
 physical `<dir>/server` or `<dir>/index` files and ignores `package.json` `exports`, so the
-repo ships a root `server.ts` re-export shim for the repo-root target. npm installs are
-unaffected: a package target resolves through `exports["./server"]` → `src/plugin.ts`. The
+repo ships root `server.ts` and `tui.ts` re-export shims for the repo-root target. npm installs
+are unaffected: a package target resolves through `exports["./server"]` → `src/plugin.ts` and
+`exports["./tui"]` → `src/tui.ts`. The
 published `files` list ships `src/`, `docs/chat-protocol.md`, `README.md` and `LICENSE`;
-`server.ts` is deliberately not shipped, because a directory target pointed into a published
+the root shims are deliberately not shipped, because a directory target pointed into a published
 tarball is not a supported install form. Release
 is manual — bump, tag `vX.Y.Z`, `npm publish`, GitHub release notes. The npm token is a
 granular access token in the user's `~/.npmrc` (`chmod 600`), never in the repo. A `flake.nix`

@@ -3,11 +3,11 @@ import { Database } from "bun:sqlite";
 import { lstatSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { defaultChatDir } from "./core/options.ts";
-import { historyCount, openQuestions, readMessages } from "./core/protocol.ts";
+import { historyCount, openQuestions, readAllMessages, readMessages } from "./core/protocol.ts";
 import { sanitize } from "./core/render.ts";
-import { chatFilePath, isValidSessionId } from "./core/storage.ts";
+import { chatFilePath, isValidSessionId, openChatReadonly } from "./core/storage.ts";
 import type { Message } from "./core/types.ts";
-import { clock, headerLine, messageIdWidth, renderMessage } from "./core/view.ts";
+import { clock, messageIdWidth, renderMessage, renderTranscript } from "./core/view.ts";
 
 const USAGE = "usage: agent-chat [view] [<session-id|path>] [--dir <chatDir>] [--follow]";
 const LIVE_DIVIDER = "──── live ────";
@@ -51,27 +51,6 @@ function exists(path: string): boolean {
     return true;
   } catch {
     return false;
-  }
-}
-
-function openReadonly(path: string): Database {
-  const stat = lstatSync(path);
-  if (stat.isSymbolicLink()) throw new Error(`refusing symlinked chat file ${path}`);
-  if (!stat.isFile()) throw new Error(`refusing non-regular chat file ${path}`);
-  const db = new Database(path, { readonly: true });
-  db.exec("PRAGMA busy_timeout = 5000");
-  return db;
-}
-
-function readAll(db: Database, since: number): Message[] {
-  const messages: Message[] = [];
-  let cursor = since;
-  for (;;) {
-    const page = readMessages(db, { since: cursor, limit: READ_PAGE });
-    if (page.length === 0) return messages;
-    messages.push(...page);
-    if (page.length < READ_PAGE) return messages;
-    cursor = page[page.length - 1]?.id ?? cursor;
   }
 }
 
@@ -140,7 +119,7 @@ function listChats(dir: string): void {
     const session = file.slice(0, -".db".length);
     let db: Database | null = null;
     try {
-      db = openReadonly(path);
+      db = openChatReadonly(path);
       const count = historyCount(db);
       const last = lastActivity(db);
       const open = openQuestions(db).length;
@@ -226,7 +205,7 @@ function main(): void {
   const session = basename(path).replace(/\.(db|sqlite)$/i, "");
   let db: Database;
   try {
-    db = openReadonly(path);
+    db = openChatReadonly(path);
   } catch (err) {
     fail(`cannot read ${path}: ${errorText(err)}`);
   }
@@ -234,16 +213,13 @@ function main(): void {
   let messages: Message[];
   let open: number;
   try {
-    messages = readAll(db, 0);
+    messages = readAllMessages(db);
     open = openQuestions(db).length;
   } catch (err) {
     fail(`cannot read ${path}: ${errorText(err)}`);
   }
 
-  console.log(headerLine(session, messages, open));
-  for (const message of messages) {
-    console.log(renderMessage(message, messageIdWidth(messages)));
-  }
+  console.log(renderTranscript(messages, open, session));
 
   if (args.follow) {
     const last = messages[messages.length - 1];

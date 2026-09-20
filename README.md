@@ -44,6 +44,26 @@ agent-chat view <session-id> --follow   # then append new messages live
 `--dir <chatDir>` points the viewer at a non-default chat directory. The `agent-chat` bin runs
 on Bun (`#!/usr/bin/env bun`), so Bun must be on `PATH` wherever it is used.
 
+## In the TUI
+
+With the plugin installed, `/agent-chat` in the opencode TUI appends the current session's chat
+to the conversation as one subdued notice: no model turn starts, and the transcript is kept out
+of the model's context. It needs an open session.
+
+TUI options come from `cli.json`, not `opencode.json`:
+
+```jsonc
+// ~/.config/opencode/cli.json
+{
+  "plugins": [
+    { "package": "opencode-agent-chat", "options": { "chatDir": "/path/to/chats" } }
+  ]
+}
+```
+
+Without an entry, the same default `chatDir` applies. A long chat renders inside a single
+notice block (no collapse or scroll); the line format matches `agent-chat view`.
+
 ## Options
 
 | Option | Default | Meaning |
@@ -95,4 +115,4 @@ provider.
 ## Limits
 
 opencode v2 on the 2.0.x line (floor `2.0.8`; `@opencode/plugin` uses the `~2.0.8` range).
-Agents only — the viewer observes and never posts.
+Agents only — the viewer and the `/agent-chat` command observe and never post.
