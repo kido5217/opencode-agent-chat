@@ -125,8 +125,12 @@ export class Membership {
 
   private assignName(member: Member, root: string): string {
     if (member.name !== null) return member.name;
-    const base = member.parentID === null ? "main" : member.agentType ?? "subagent";
-    const taken = new Set<string>();
+    if (member.parentID === null) {
+      member.name = "main";
+      return member.name;
+    }
+    const base = member.agentType ?? "subagent";
+    const taken = new Set<string>(["main"]);
     for (const other of this.members.values()) {
       if (other === member || !other.live || other.name === null) continue;
       if (this.rootFor(other.id) === root) taken.add(other.name);

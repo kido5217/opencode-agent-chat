@@ -191,6 +191,23 @@ describe("child naming", () => {
     expect(membership.nameFor("a")).toBe("explore");
     expect(membership.nameFor("b")).toBe("explore");
   });
+
+  test("main is reserved for the root even when a child starts first", () => {
+    const { membership, rows, setNow } = setup();
+    membership.sessionCreated({ id: "root", agentType: "build" });
+    membership.sessionCreated({ id: "c1", parentID: "root", agentType: "main" });
+    setNow(1);
+    membership.executionStarted("c1");
+    expect(membership.nameFor("c1")).toBe("main-2");
+    setNow(2);
+    membership.executionStarted("root");
+    expect(membership.nameFor("root")).toBe("main");
+    expect(rows).toEqual([
+      { root: "root", body: "main-2 joined" },
+      { root: "root", body: "main joined" },
+    ]);
+    expect(membership.roster("root").map((p) => p.name)).toEqual(["main-2", "main"]);
+  });
 });
 
 describe("lineage", () => {
