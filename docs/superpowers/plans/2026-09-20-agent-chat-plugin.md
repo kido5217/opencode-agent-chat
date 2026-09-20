@@ -24,13 +24,14 @@ Copied verbatim from `DESIGN.md`; every task's requirements implicitly include t
 - Defaults: `maxBodyChars 4000`, `maxPostsPerRun 25`, `digestMaxMessages 20`, `digestMaxChars 2000`, `debug false`.
 - Injections are system text only, never a fabricated user turn, never persisted; one shared renderer serves digest, briefing, and reads.
 - npm name and plugin definition id are both `opencode-agent-chat`; viewer bin `agent-chat`; version `0.1.0`; MIT.
-- Tests: `bun test`, a fresh temp-file SQLite per test (real WAL/`busy_timeout`), injectable `now()`. Gates are local (`bun test`, `bun run smoke`); no CI.
+- Every command runs inside the Nix dev shell: prefix one-off commands with `nix develop -c` (e.g. `nix develop -c bun test`); `flake.nix` / `flake.lock` are already on `main` and are not to be modified.
+- Tests: `bun test`, a fresh temp-file SQLite per test (real WAL/`busy_timeout`), injectable `now()`. Gates are local (`nix develop -c bun test`, `nix develop -c bun run smoke`); no CI.
 
 ## File Structure
 
 | Path | Responsibility | Task |
 |---|---|---|
-| `package.json`, `tsconfig.json`, `flake.nix`, `.gitignore` | Toolchain and packaging | 1 |
+| `package.json`, `tsconfig.json`, `.gitignore` | Toolchain and packaging (the dev shell from Task 0 is already on `main`) | 1 |
 | `src/core/types.ts` | Kinds, `Message`, `Participant` | 1 |
 | `src/core/options.ts` | Option parsing/validation/defaults | 2 |
 | `src/core/migrations.ts` | `user_version` migrations, schema DDL | 2 |
@@ -57,7 +58,7 @@ Existing root files `CONTEXT.md`, `DESIGN.md`, `LICENSE`, `README.md`, `AGENTS.m
 ### Task 1: Scaffold, toolchain, shared types
 
 **Files:**
-- Create: `package.json`, `tsconfig.json`, `flake.nix`, `.gitignore`, `src/core/types.ts`, `test/types.test.ts`
+- Create: `package.json`, `tsconfig.json`, `.gitignore`, `src/core/types.ts`, `test/types.test.ts`
 
 **Interfaces:**
 - Consumes: nothing.
@@ -87,7 +88,7 @@ Existing root files `CONTEXT.md`, `DESIGN.md`, `LICENSE`, `README.md`, `AGENTS.m
 
 - [ ] **Step 2: Add dependencies**
 
-Run: `bun add --exact @opencode/plugin@2.0.8 && bun add -d typescript @types/bun`
+Run: `nix develop -c bun add --exact @opencode/plugin@2.0.8 && nix develop -c bun add -d typescript @types/bun`
 Expected: `package.json` gains `"@opencode/plugin": "2.0.8"` under dependencies (exact, no caret), `typescript` and `@types/bun` under devDependencies; `node_modules/` and `bun.lock` are created.
 
 - [ ] **Step 3: Write `tsconfig.json`**
@@ -176,39 +177,21 @@ describe("kind vocabulary", () => {
 
 - [ ] **Step 7: Run the test**
 
-Run: `bun test test/types.test.ts`
+Run: `nix develop -c bun test test/types.test.ts`
 Expected: PASS, 3 tests.
 
-- [ ] **Step 8: Write `flake.nix`**
+- [ ] **Step 8: Verify the gates**
 
-```nix
-{
-  description = "opencode-agent-chat dev shell";
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-  outputs = { self, nixpkgs }:
-    let
-      systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
-      forAll = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
-    in {
-      devShells = forAll (pkgs: {
-        default = pkgs.mkShell { packages = [ pkgs.bun pkgs.git ]; };
-      });
-    };
-}
-```
+Run: `nix develop -c bun run typecheck` (expect no errors), then `nix develop -c bun test` (expect 3 pass).
 
-- [ ] **Step 9: Verify the dev shell and the gates**
-
-Run: `timeout -k 5s 300s nix develop --command bun --version` (expect `1.3.x`), then `bun run typecheck` (expect no errors), then `bun test` (expect 3 pass).
-
-- [ ] **Step 10: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add package.json bun.lock tsconfig.json .gitignore flake.nix src/core/types.ts test/types.test.ts
-git commit -m "feat: scaffold package, dev shell, and kind vocabulary"
+git add package.json bun.lock tsconfig.json .gitignore src/core/types.ts test/types.test.ts
+git commit -m "feat: scaffold the package and kind vocabulary"
 ```
 
-If `nix develop` generated `flake.lock`, stage it too. If the network blocks lock generation, report it as a concern instead of stubbing the flake.
+The repo's dev shell (`flake.nix`, `flake.lock`, mandated by `AGENTS.md`) already exists on `main`; do not modify it.
 
 ---
 
@@ -1050,6 +1033,6 @@ git commit -m "docs: add the quickstart README"
 
 ## Execution notes
 
-- Every task ends green on `bun test` and `bun run typecheck`; no task leaves the tree red.
+- Every task ends green on `nix develop -c bun test` and `nix develop -c bun run typecheck`; no task leaves the tree red (the dev shell is the only supported toolchain).
 - The adapter (Task 6) and viewer (Task 7) have no unit tests by design (#16); their guards are the smoke run and the manual viewing check respectively.
 - `docs/chat-protocol.md`, `CONTEXT.md`, `DESIGN.md`, and `docs/adr/` are not to be modified by any task; if an implementation fact contradicts them, stop and report rather than editing the design.
