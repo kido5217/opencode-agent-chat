@@ -1,3 +1,11 @@
+## Git workflow
+
+Correct workflow: branch → commit → PR → merge → pull (rebase).
+
+- `main` is fully protected: direct pushes are blocked; every change lands through a PR.
+- The LLM agent is allowed to create PRs and merge them.
+- After the PR is merged, update local `main` with `git pull --rebase`.
+
 ## Agent skills
 
 ### Issue tracker
