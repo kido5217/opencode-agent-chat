@@ -254,3 +254,27 @@ Assertions, all reproduced this session:
   (config object options + double load), `p4/p4b` (file targets rejected, dir targets accepted),
   `p5` (package dir, `exports["./server"]` precedence), `p6` (npm package install + no version gate),
   `p8` (singular `plugin/` dir), `p9` (self-contained package dir with own `node_modules`).
+
+---
+
+## 9. Addendum (ticket #15): config composition and removal entries (SOURCE-READ, not probed)
+
+Read at tag v2.0.8: `packages/core/src/config/plugin/source.ts`, `packages/core/src/config/discovery.ts`.
+
+- **Each config document contributes its own `plugins` array.** `scan()` iterates the discovered
+  config entries (global, then project `opencode.json(c)` / `.opencode/opencode.json(c)`) and
+  flat-maps each document's `info.plugins`; there is no array merging, so a project config *adds*
+  to a global one rather than replacing it.
+- **Removal entries exist.** `parse()` treats a string starting with `-` as
+  `{ type: "remove", target: input.slice(1) }`; a bare `"-"` throws
+  `Plugin remove operation requires a target`. Operations are ordered `[...discovered, ...configured]`
+  and the source comment says explicit config is applied last "so it can remove auto-discovered
+  packages". `"plugins": ["-agent-chat"]` in a project config can therefore cancel a globally
+  configured or auto-discovered plugin. Matching is on the resolved target, so the removal string
+  must resolve to the same target as the add (a relative path resolves against the removing
+  document's own directory — a global `./dir` add and a project `-./dir` removal resolve differently).
+- **Options arrive only with an add entry.** Object entries `{package, options}` pass `options`
+  verbatim; auto-discovered targets and string-add entries get `{}`.
+- **UNVERIFIED:** the add/remove conflict consumer (which operation wins when both exist for one
+  target) was read in source only. Ticket #16's smoke loop should probe: global add + project
+  remove, and removal of an auto-discovered directory target.
