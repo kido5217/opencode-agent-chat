@@ -1,0 +1,46 @@
+import { describe, expect, test } from "bun:test";
+import { chunks, renderMessage } from "../src/cli.ts";
+import type { Message } from "../src/core/types.ts";
+
+function message(over: Partial<Message>): Message {
+  return {
+    id: 1,
+    sender_type: "agent",
+    sender_name: "main",
+    sender_session: "ses_x",
+    kind: "status",
+    to_name: null,
+    in_reply_to: null,
+    body: "hi",
+    created_at: 0,
+    ...over,
+  } as Message;
+}
+
+describe("viewer rendering", () => {
+  test("a long unbroken token wraps without exceeding the line width", () => {
+    const rendered = renderMessage(message({ body: "x".repeat(450) }), 1);
+    for (const line of rendered.split("\n")) expect(line.length).toBeLessThanOrEqual(100);
+  });
+
+  test("long sender and recipient fields are capped so the line stays within 100 columns", () => {
+    const rendered = renderMessage(message({ id: 8, sender_name: "s".repeat(60), to_name: "z".repeat(99) }), 1);
+    for (const line of rendered.split("\n")) expect(line.length).toBeLessThanOrEqual(100);
+    expect(rendered).toContain("→ z");
+  });
+
+  test("a normal message renders unchanged", () => {
+    expect(renderMessage(message({ body: "hello" }), 1)).toMatch(/^\d{2}:\d{2}:\d{2} \[1\] ● main: hello$/);
+    expect(renderMessage(message({ body: "hello", to_name: "builder" }), 1)).toMatch(
+      /^\d{2}:\d{2}:\d{2} \[1\] ● main → builder: hello$/,
+    );
+  });
+
+  test("chunks hard-breaks an over-width word and wraps the rest", () => {
+    const lines = chunks(`ab ${"c".repeat(45)} tail`, 20);
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) expect(line.length).toBeLessThanOrEqual(20);
+    expect(lines.join("")).toContain("c".repeat(45));
+    expect(lines.join("")).toContain("tail");
+  });
+});

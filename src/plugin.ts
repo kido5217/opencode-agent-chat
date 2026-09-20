@@ -137,6 +137,7 @@ export default Plugin.define({
               membership.sessionCreated({ id: sessionID, parentID, agentType: agent });
               seen.add(sessionID);
               log(`session created ${sessionID}${parentID === undefined ? " (root)" : ` parent=${parentID}`}`);
+              if (parentID !== undefined && parentID !== null) await hydrate(parentID);
               continue;
             }
             const data = ev.data as { sessionID?: unknown };

@@ -116,7 +116,7 @@ function messageIdWidth(messages: Message[]): number {
   return last === undefined ? 1 : String(last.id).length;
 }
 
-function chunks(text: string, width: number): string[] {
+export function chunks(text: string, width: number): string[] {
   const words = text.split(/\s+/).filter((word) => word.length > 0);
   const lines: string[] = [];
   let line = "";
@@ -142,11 +142,12 @@ function chunks(text: string, width: number): string[] {
   return lines.length === 0 ? [""] : lines;
 }
 
-function fitField(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+export function fitField(text: string, max: number): string {
+  const chars = [...text];
+  return chars.length <= max ? text : `${chars.slice(0, max - 1).join("")}…`;
 }
 
-function renderMessage(message: Message, idWidth: number): string {
+export function renderMessage(message: Message, idWidth: number): string {
   const head = `${clock(message.created_at)} [${String(message.id).padStart(idWidth)}]`;
   let prefix: string;
   if (message.kind === "system") {
@@ -344,8 +345,10 @@ function main(): void {
   db.close();
 }
 
-try {
-  main();
-} catch (err) {
-  fail(errorText(err));
+if (import.meta.main) {
+  try {
+    main();
+  } catch (err) {
+    fail(errorText(err));
+  }
 }

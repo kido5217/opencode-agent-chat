@@ -65,7 +65,7 @@ export function openChat(
     chmodSync(path, 0o600);
   } catch (err) {
     warn(`agent-chat: could not enforce 0600 on ${path}: ${String(err)}`);
-    throw new Error(`agent-chat: refusing to open chat file with wrong permissions ${path}`);
+    throw new Error(`agent-chat: refusing to open chat file with wrong permissions ${path}: ${String(err)}`);
   }
   const db = new Database(path, { create: true });
   db.exec("PRAGMA journal_mode = WAL");

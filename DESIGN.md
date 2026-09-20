@@ -129,7 +129,8 @@ Kinds are validated in code (ADR-0001); the vocabulary can grow without a table 
 
 ## 5. Membership lifecycle
 
-Event-driven; no polling I/O beyond the startup reconcile (`v2-event-bus.md`).
+Event-driven; no plugin-side session listing exists on 2.0.8 (ruling R1), so membership
+hydrates on first sight of a session (`v2-event-bus.md`).
 
 | Moment | Signal | Effect |
 |---|---|---|
@@ -137,7 +138,7 @@ Event-driven; no polling I/O beyond the startup reconcile (`v2-event-bus.md`).
 | Subagent spawned | `session.created` with `data.parentID` | child joins its root's chat (deeper nesting walks the parent chain) |
 | Session running | `session.execution.started` | join/rejoin recorded (`<name> joined`) |
 | Session reaches terminal | `session.execution.succeeded \| failed \| interrupted` | leave recorded (`<name> left (completed\|failed\|interrupted)`) |
-| Plugin loads | session listing | reconcile membership from live sessions; no synthetic events on restart |
+| Plugin loads | — (no session listing; see §7) | sessions register on their first event, and each new child walks its ancestor chain so the chat root resolves; no synthetic events on restart |
 
 - **Roster** is live-only: name, agent type, session id, busy/idle, joined-at. A finished
   session is absent.
@@ -199,7 +200,7 @@ configuration is the only gate.
 
 - Agents cannot post `system`; only the plugin writes those rows.
 - An explicit `open_only: false` is treated as no filter and takes the consuming unread path
-  (ratified 0.1.0 behaviour; omit the key to consume).
+  when it is the only argument (ratified 0.1.0 behaviour; omit the key to consume).
 - Hydration is lazy (ruling R1: no plugin-side session listing): a session is registered on
   its first event and its ancestors are walked into the same chat. A tool call that arrives
   before its session's first event can see `not attached to a chat` once; the next event
@@ -208,7 +209,8 @@ configuration is the only gate.
   `maxPostsPerRun` per agent execution run (25, reset each run, system rows excluded); a
   consecutive whitespace-identical post from the same sender in the same run is rejected
   with a reference to the earlier message. An over-limit post tells the agent to wrap up its
-  run and summarize.
+  run and summarize. A run's guard state is created on first use and evicted when the
+  execution ends, so a missed `begin` cannot silently disable the caps.
 - The tool descriptions carry the concise protocol (§9); the full rules are injected.
 
 ## 8. Config
@@ -264,7 +266,8 @@ the human observes.
   bodies wrapped at ~100 columns with continuation lines aligned under the body.
 - Glyphs: `●` status, `?` question, `✓` answer, `!` blocker, `★` finding, `→` join,
   `←` leave.
-- Header: `chat <session> · <live participants> · <n> open`.
+- Header: `chat <session> · <live participants> · <n> open`. The live set seeds `main`, so a
+  chat with no membership rows still names its root.
 - `agent-chat view <session|path>` dumps one chat; a directory or no argument lists chats
   (name, message count, last activity, open questions). `--follow` prints the current view
   once, then appends new messages under a `──── live ────` divider. Control characters are
@@ -277,7 +280,8 @@ the human observes.
 Detail: #16.
 
 - **Unit**: `bun test`, no extra framework. Test files mirror `src/core/` modules (storage,
-  protocol, digest, membership, options, migrations, render, types). Each test gets a fresh **temp-file**
+  protocol, digest, membership, options, migrations, render, types), plus a viewer
+  wrap/render contract test. Each test gets a fresh **temp-file**
   SQLite (real WAL and `busy_timeout` behavior; `:memory:` hides it). Timestamps come from an
   injectable `now()`.
 - **Smoke**: `bun run smoke [--scenario chat|config|all]`. Each scenario builds a temp
@@ -360,7 +364,7 @@ core.
    malformed input.
 4. **Renderer + digest** — shared rendering, caps, cursor advance, join briefing; unit tests
    prove lossless drain and exactly-once delivery.
-5. **Membership** — event handling and startup reconcile; unit tests over synthetic events.
+5. **Membership** — event handling and hydrate-on-first-seen; unit tests over synthetic events.
 6. **Adapter** — `Plugin.define`, event subscription, context hook, tool registration; tools,
    hook, and events visible in `debug.log`.
 7. **Viewer** — `agent-chat` per §10; manual check against a seeded file.
