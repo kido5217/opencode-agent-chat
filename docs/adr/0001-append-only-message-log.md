@@ -1,0 +1,3 @@
+# Flat append-only message log, open questions derived
+
+The chat is a single flat `messages` table; questions and answers are message kinds, and an open question is derived by query (a `question` with no `answer` replying to it). We chose this over a normalized `questions` table with lifecycle states and over an event journal with projections: the chat is a conversation log, not a task tracker, and deriving the one useful view (unanswered questions) costs a cheap query while keeping the schema free of mutable state that agents could desync. Kind strings are validated in code, not by a DB `CHECK`, so the vocabulary can grow without rebuilding the table.
