@@ -6,26 +6,14 @@ import { defaultChatDir } from "./core/options.ts";
 import { historyCount, openQuestions, readMessages } from "./core/protocol.ts";
 import { sanitize } from "./core/render.ts";
 import { chatFilePath, isValidSessionId } from "./core/storage.ts";
-import type { Kind, Message } from "./core/types.ts";
+import type { Message } from "./core/types.ts";
+import { clock, headerLine, messageIdWidth, renderMessage } from "./core/view.ts";
 
 const USAGE = "usage: agent-chat [view] [<session-id|path>] [--dir <chatDir>] [--follow]";
 const LIVE_DIVIDER = "──── live ────";
 const POLL_MS = 1000;
 const READ_PAGE = 100;
-const LINE_WIDTH = 100;
-const MIN_BODY_WIDTH = 32;
-const SENDER_MAX = 16;
-const TO_MAX = 24;
 const NAME_COLUMN = 26;
-const GLYPHS: Record<Kind, string> = {
-  status: "●",
-  question: "?",
-  answer: "✓",
-  blocker: "!",
-  finding: "★",
-  handoff: "→",
-  system: "→",
-};
 
 interface CliArgs {
   target: string | null;
@@ -47,11 +35,6 @@ function failUsage(prefix: string): never {
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-function clock(ms: number): string {
-  const date = new Date(ms);
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
 }
 
 function isDirectory(path: string): boolean {
@@ -90,81 +73,6 @@ function readAll(db: Database, since: number): Message[] {
     if (page.length < READ_PAGE) return messages;
     cursor = page[page.length - 1]?.id ?? cursor;
   }
-}
-
-function liveParticipants(messages: Message[]): string[] {
-  const live = new Set<string>(["main"]);
-  for (const message of messages) {
-    if (message.kind !== "system") continue;
-    const body = message.body;
-    if (body.endsWith(" joined")) {
-      live.add(body.slice(0, -" joined".length));
-    } else if (body.includes(" left")) {
-      live.delete(body.slice(0, body.indexOf(" left")));
-    }
-  }
-  return [...live];
-}
-
-function headerLine(session: string, messages: Message[], open: number): string {
-  const names = liveParticipants(messages).map(sanitize).join(", ");
-  return `chat ${sanitize(session)} · ${names} · ${open} open`;
-}
-
-function messageIdWidth(messages: Message[]): number {
-  const last = messages[messages.length - 1];
-  return last === undefined ? 1 : String(last.id).length;
-}
-
-export function chunks(text: string, width: number): string[] {
-  const words = text.split(/\s+/).filter((word) => word.length > 0);
-  const lines: string[] = [];
-  let line = "";
-  for (const word of words) {
-    let rest = word;
-    while (rest.length > 0) {
-      const room = line === "" ? width : width - line.length - 1;
-      if (room <= 0) {
-        lines.push(line);
-        line = "";
-        continue;
-      }
-      const piece = rest.slice(0, room);
-      line = line === "" ? piece : `${line} ${piece}`;
-      rest = rest.slice(piece.length);
-      if (line.length >= width) {
-        lines.push(line);
-        line = "";
-      }
-    }
-  }
-  if (line !== "") lines.push(line);
-  return lines.length === 0 ? [""] : lines;
-}
-
-export function fitField(text: string, max: number): string {
-  const chars = [...text];
-  return chars.length <= max ? text : `${chars.slice(0, max - 1).join("")}…`;
-}
-
-export function renderMessage(message: Message, idWidth: number): string {
-  const head = `${clock(message.created_at)} [${String(message.id).padStart(idWidth)}]`;
-  let prefix: string;
-  if (message.kind === "system") {
-    prefix = `${head} ${message.body.includes("joined") ? "→" : "←"}`;
-  } else {
-    const sender = fitField(sanitize(message.sender_name), SENDER_MAX);
-    const rawTo =
-      message.to_name === null || message.to_name === "" ? null : fitField(sanitize(message.to_name), TO_MAX);
-    const to = rawTo === null ? "" : ` → ${rawTo}`;
-    prefix = `${head} ${GLYPHS[message.kind]} ${sender}${to}`;
-  }
-  const body = sanitize(message.body);
-  const bodyWidth = Math.max(MIN_BODY_WIDTH, LINE_WIDTH - prefix.length - 1);
-  const lines = chunks(body, bodyWidth);
-  const out = [`${prefix} ${lines[0] ?? ""}`];
-  for (const extra of lines.slice(1)) out.push(`${" ".repeat(prefix.length + 1)}${extra}`);
-  return out.join("\n");
 }
 
 function lastActivity(db: Database): number | null {

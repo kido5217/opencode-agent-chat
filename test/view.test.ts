@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { chunks, renderMessage } from "../src/cli.ts";
 import type { Message } from "../src/core/types.ts";
+import { chunks, headerLine, liveParticipants, messageIdWidth, renderMessage } from "../src/core/view.ts";
 
 function message(over: Partial<Message>): Message {
   return {
@@ -42,5 +42,29 @@ describe("viewer rendering", () => {
     for (const line of lines) expect(line.length).toBeLessThanOrEqual(20);
     expect(lines.join("")).toContain("c".repeat(45));
     expect(lines.join("")).toContain("tail");
+  });
+});
+
+describe("viewer header", () => {
+  test("live participants start with main and follow join/leave rows", () => {
+    const messages = [
+      message({ kind: "system", body: "explore joined", id: 1 }),
+      message({ kind: "status", body: "hello", id: 2 }),
+      message({ kind: "system", body: "builder joined", id: 3 }),
+      message({ kind: "system", body: "explore left (completed)", id: 4 }),
+    ];
+    expect(liveParticipants(messages)).toEqual(["main", "builder"]);
+  });
+
+  test("the header carries the session, live names, and the open count", () => {
+    expect(headerLine("ses_abc", [message({ kind: "system", body: "explore joined" })], 3)).toBe(
+      "chat ses_abc · main, explore · 3 open",
+    );
+  });
+
+  test("the id column width follows the last message; an empty chat uses one", () => {
+    expect(messageIdWidth([])).toBe(1);
+    expect(messageIdWidth([message({ id: 9 })])).toBe(1);
+    expect(messageIdWidth([message({ id: 120 })])).toBe(3);
   });
 });
