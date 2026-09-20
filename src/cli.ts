@@ -13,7 +13,9 @@ const LIVE_DIVIDER = "──── live ────";
 const POLL_MS = 1000;
 const READ_PAGE = 100;
 const LINE_WIDTH = 100;
-const MIN_BODY_WIDTH = 40;
+const MIN_BODY_WIDTH = 32;
+const SENDER_MAX = 16;
+const TO_MAX = 24;
 const NAME_COLUMN = 26;
 const GLYPHS: Record<Kind, string> = {
   status: "●",
@@ -34,6 +36,12 @@ interface CliArgs {
 
 function fail(message: string): never {
   console.error(`agent-chat: ${sanitize(message)}`);
+  process.exit(1);
+}
+
+function failUsage(prefix: string): never {
+  console.error(`agent-chat: ${sanitize(prefix)}`);
+  console.error(USAGE);
   process.exit(1);
 }
 
@@ -113,15 +121,29 @@ function chunks(text: string, width: number): string[] {
   const lines: string[] = [];
   let line = "";
   for (const word of words) {
-    if (line !== "" && line.length + 1 + word.length > width) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = line === "" ? word : `${line} ${word}`;
+    let rest = word;
+    while (rest.length > 0) {
+      const room = line === "" ? width : width - line.length - 1;
+      if (room <= 0) {
+        lines.push(line);
+        line = "";
+        continue;
+      }
+      const piece = rest.slice(0, room);
+      line = line === "" ? piece : `${line} ${piece}`;
+      rest = rest.slice(piece.length);
+      if (line.length >= width) {
+        lines.push(line);
+        line = "";
+      }
     }
   }
   if (line !== "") lines.push(line);
   return lines.length === 0 ? [""] : lines;
+}
+
+function fitField(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
 function renderMessage(message: Message, idWidth: number): string {
@@ -130,8 +152,11 @@ function renderMessage(message: Message, idWidth: number): string {
   if (message.kind === "system") {
     prefix = `${head} ${message.body.includes("joined") ? "→" : "←"}`;
   } else {
-    const to = message.to_name === null || message.to_name === "" ? "" : ` → ${sanitize(message.to_name)}`;
-    prefix = `${head} ${GLYPHS[message.kind]} ${sanitize(message.sender_name)}${to}`;
+    const sender = fitField(sanitize(message.sender_name), SENDER_MAX);
+    const rawTo =
+      message.to_name === null || message.to_name === "" ? null : fitField(sanitize(message.to_name), TO_MAX);
+    const to = rawTo === null ? "" : ` → ${rawTo}`;
+    prefix = `${head} ${GLYPHS[message.kind]} ${sender}${to}`;
   }
   const body = sanitize(message.body);
   const bodyWidth = Math.max(MIN_BODY_WIDTH, LINE_WIDTH - prefix.length - 1);
@@ -156,7 +181,7 @@ function parseArgs(argv: string[]): CliArgs {
     }
     if (arg === "--dir") {
       const value = argv[i + 1];
-      if (value === undefined) fail(`--dir needs a chat directory\n${USAGE}`);
+      if (value === undefined || value.startsWith("-")) failUsage("--dir needs a chat directory");
       parsed.dir = value;
       i += 1;
       continue;
@@ -166,8 +191,8 @@ function parseArgs(argv: string[]): CliArgs {
       continue;
     }
     if (arg === "view" && parsed.target === null) continue;
-    if (arg.startsWith("-")) fail(`unknown option ${arg}\n${USAGE}`);
-    if (parsed.target !== null) fail(`unexpected argument ${arg}\n${USAGE}`);
+    if (arg.startsWith("-")) failUsage(`unknown option ${arg}`);
+    if (parsed.target !== null) failUsage(`unexpected argument ${arg}`);
     parsed.target = arg;
   }
   return parsed;
@@ -204,23 +229,25 @@ function listChats(dir: string): void {
   for (const file of files) {
     const path = join(base, file);
     const session = file.slice(0, -".db".length);
+    let db: Database | null = null;
     try {
-      const db = openReadonly(path);
+      db = openReadonly(path);
       const count = historyCount(db);
       const last = lastActivity(db);
       const open = openQuestions(db).length;
-      db.close();
       const when = last === null ? "-" : clock(last);
       console.log(
         `  ${sanitize(session).padEnd(NAME_COLUMN)} ${String(count).padStart(4)} messages   last ${when}   open questions ${open}`,
       );
     } catch (err) {
       console.log(`  ${sanitize(session).padEnd(NAME_COLUMN)} unreadable: ${sanitize(errorText(err))}`);
+    } finally {
+      db?.close();
     }
   }
 }
 
-function followChat(db: Database, startId: number): void {
+function followChat(db: Database, startId: number, idWidth: number): void {
   let lastId = startId;
   let dividerShown = false;
 
@@ -232,7 +259,6 @@ function followChat(db: Database, startId: number): void {
         console.log(LIVE_DIVIDER);
         dividerShown = true;
       }
-      const idWidth = messageIdWidth(batch);
       for (const message of batch) {
         console.log(renderMessage(message, idWidth));
         lastId = message.id;
@@ -268,7 +294,7 @@ function main(): void {
   const chatDir = args.dir ?? defaultChatDir();
 
   if (args.target === null) {
-    if (args.follow) fail(`--follow needs a chat (give a session id or path)\n${USAGE}`);
+    if (args.follow) failUsage("--follow needs a chat (give a session id or path)");
     listChats(chatDir);
     return;
   }
@@ -276,7 +302,7 @@ function main(): void {
   const target = args.target;
   const resolved = resolve(target);
   if (isDirectory(resolved)) {
-    if (args.follow) fail(`--follow needs a chat (give a session id or path), not a directory\n${USAGE}`);
+    if (args.follow) failUsage("--follow needs a chat (give a session id or path), not a directory");
     listChats(resolved);
     return;
   }
@@ -312,7 +338,7 @@ function main(): void {
 
   if (args.follow) {
     const last = messages[messages.length - 1];
-    followChat(db, last === undefined ? 0 : last.id);
+    followChat(db, last === undefined ? 0 : last.id, messageIdWidth(messages));
     return;
   }
   db.close();
