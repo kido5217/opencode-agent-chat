@@ -198,6 +198,8 @@ configuration is the only gate.
 | `chat_roster` | — | live participants: name · type · busy/idle · joined | never |
 
 - Agents cannot post `system`; only the plugin writes those rows.
+- An explicit `open_only: false` is treated as no filter and takes the consuming unread path
+  (ratified 0.1.0 behaviour; omit the key to consume).
 - Hydration is lazy (ruling R1: no plugin-side session listing): a session is registered on
   its first event and its ancestors are walked into the same chat. A tool call that arrives
   before its session's first event can see `not attached to a chat` once; the next event
@@ -275,7 +277,7 @@ the human observes.
 Detail: #16.
 
 - **Unit**: `bun test`, no extra framework. Test files mirror `src/core/` modules (storage,
-  protocol, digest, membership, options, migrations). Each test gets a fresh **temp-file**
+  protocol, digest, membership, options, migrations, render, types). Each test gets a fresh **temp-file**
   SQLite (real WAL and `busy_timeout` behavior; `:memory:` hides it). Timestamps come from an
   injectable `now()`.
 - **Smoke**: `bun run smoke [--scenario chat|config|all]`. Each scenario builds a temp
@@ -283,8 +285,10 @@ Detail: #16.
   `Model unavailable`), mounts the plugin as a directory through the project config with
   `{ chatDir, debug: true }`, and runs
   `opencode2 run --standalone --format json --print-logs --auto --agent <probe-main>` with a
-  prompt that spawns one subagent which posts a `finding` and a `question`, then has main
-  answer. Runs are bounded by `timeout`; exit 124 is acceptable once the plugin has loaded —
+  prompt that spawns one subagent which posts a `finding` and a `question` (>200 characters,
+  ending in a tail marker), then has main read that question by id, list the roster, and
+  answer it. The chat assertions also prove the full question body came back from `chat_read`.
+  Runs are bounded by `timeout`; exit 124 is acceptable once the plugin has loaded —
   assertions decide, and they read **artifacts, never stdout**.
   - `chat`: chat DB exists; kinds/senders/`in_reply_to` chains; join/leave system rows;
     digest injections in `debug.log`; a digest id quoted in the session export; exactly one
@@ -336,7 +340,10 @@ targets into its XDG cache, so nothing is pre-installed by hand. Dev/dogfood use
 path entry (`{"package": "/abs/path"}`); on 2.0.8 a local absolute directory target resolves
 physical `<dir>/server` or `<dir>/index` files and ignores `package.json` `exports`, so the
 repo ships a root `server.ts` re-export shim for the repo-root target. npm installs are
-unaffected: a package target resolves through `exports["./server"]` → `src/plugin.ts`. Release
+unaffected: a package target resolves through `exports["./server"]` → `src/plugin.ts`. The
+published `files` list ships `src/`, `docs/chat-protocol.md`, `README.md` and `LICENSE`;
+`server.ts` is deliberately not shipped, because a directory target pointed into a published
+tarball is not a supported install form. Release
 is manual — bump, tag `vX.Y.Z`, `npm publish`, GitHub release notes. The npm token is a
 granular access token in the user's `~/.npmrc` (`chmod 600`), never in the repo. A `flake.nix`
 devShell is the supported dev environment; Nix packaging of the plugin itself is a follow-up.
