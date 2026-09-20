@@ -330,7 +330,7 @@ Detail: #17, `v2-plugin-packaging.md` §10.
 | npm name | `opencode-agent-chat` |
 | plugin id | `opencode-agent-chat` (must equal the install name; removal `-opencode-agent-chat`) |
 | viewer bin | `agent-chat` |
-| version | `0.1.0` (manual semver from here) |
+| version | `0.1.1` (manual semver; `0.1.0` was the first release) |
 | license | MIT |
 | SDK | `@opencode/plugin` pinned exactly `2.0.8` (bump deliberately, with a smoke run) |
 
