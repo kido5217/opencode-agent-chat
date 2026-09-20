@@ -24,6 +24,7 @@ Copied verbatim from `DESIGN.md`; every task's requirements implicitly include t
 - Defaults: `maxBodyChars 4000`, `maxPostsPerRun 25`, `digestMaxMessages 20`, `digestMaxChars 2000`, `debug false`.
 - Injections are system text only, never a fabricated user turn, never persisted; one shared renderer serves digest, briefing, and reads.
 - npm name and plugin definition id are both `opencode-agent-chat`; viewer bin `agent-chat`; version `0.1.0`; MIT.
+- Versioning follows semver; the initial and current release line is `0.1.0`.
 - Every command runs inside the Nix dev shell: prefix one-off commands with `nix develop -c` (e.g. `nix develop -c bun test`); `flake.nix` / `flake.lock` are already on `main` and are not to be modified.
 - Tests: `bun test`, a fresh temp-file SQLite per test (real WAL/`busy_timeout`), injectable `now()`. Gates are local (`nix develop -c bun test`, `nix develop -c bun run smoke`); no CI.
 
@@ -683,7 +684,8 @@ Seed with `postMessage` (`test/helpers.ts` `seed`) and assert:
 test("no unread means no injection", () => {
   const { db } = tempChat();
   seed(db, 3);
-  expect(buildDigest(db, "ses_test_0001", "main", limits, 1)).toBeNull();
+  expect(buildJoinBriefing(db, "ses_test_0001", "main", limits, 1)).not.toBeNull();
+  expect(buildDigest(db, "ses_test_0001", "main", limits, 2)).toBeNull();
 });
 
 test("drains 50 unread losslessly across three digests, no gaps or dupes", () => {
@@ -709,11 +711,11 @@ test("delivering the same digest twice is impossible (exactly-once)", () => {
 test("the character cap stops at a line boundary and advances only past displayed ids", () => {
   const { db } = tempChat();
   seed(db, 6, (i) => "x".repeat(400));
-  const d = buildDigest(db, "ses_test_0001", { maxMessages: 20, maxChars: 1000 }, 1)!;
+  const d = buildDigest(db, "ses_test_0001", "main", { maxMessages: 20, maxChars: 1000 }, 1)!;
   const ids = [...d.text.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1]));
   expect(ids.length).toBeGreaterThanOrEqual(1);
   expect(ids.length).toBeLessThan(6);
-  expect(d.cursorTo).toBe(ids.at(-1));
+  expect(d.cursorTo).toBe(ids.at(-1)!);
 });
 
 test("join briefing shows the last N of the history and parks the cursor at the latest id", () => {
@@ -744,14 +746,14 @@ test("questions and blockers are flagged and open questions close", () => {
 });
 ```
 
-Use `limits = { maxMessages: 20, maxChars: 2000 }`. For the cursor tests, `buildDigest` must not be reachable for an unknown session (no cursor row) — that is the join path.
+Use `limits = { maxMessages: 20, maxChars: 2000 }`. `buildDigest` with no cursor row treats every message as unread (digests from id 0), which keeps the drain lossless; the join briefing is a separate path the adapter chooses on first sight.
 
 - [ ] **Step 4: Run it to verify it fails**, then implement `src/core/digest.ts`
 
 Implementation notes:
 
 - `buildJoinBriefing`: inside one `db.transaction`, read `latestMessageId`, `historyCount`, select the last `maxMessages` rows (inner `ORDER BY id DESC LIMIT ?`, outer `ORDER BY id ASC`), read `openQuestions`, then `setCursor(db, sessionID, name, latest, now)`. Return `null` when the chat is empty (cursor row still written with `0`). Name for the cursor: look up `cursors.agent_name` if a row already exists, otherwise the caller passes it — add `name: string` to both signatures' arguments? **No**: both functions take `(db, sessionID, name, limits, now)`. Pin that signature; the adapter and tests pass the participant name.
-- `buildDigest`: one `db.transaction`: `cursor = getCursor`; if absent, delegate to the briefing path; select `unreadMessages(db, cursor.last_read_id, maxMessages)`; if empty return `null`; greedily add rendered lines while the accumulated length stays `<= maxChars`, always keeping the first; append `renderOpenQuestions(openQuestions(db))`; `setCursor` to the highest displayed id; return `{ text, cursorTo }`.
+- `buildDigest`: one `db.transaction`: `cursor = getCursor`; if absent, treat `last_read_id` as 0 (digest from the start; the briefing path is the adapter's first-sight choice); select `unreadMessages(db, cursor.last_read_id, maxMessages)`; if empty return `null`; greedily add rendered lines while the accumulated length stays `<= maxChars`, always keeping the first; append `renderOpenQuestions(openQuestions(db))`; `setCursor` to the highest displayed id; return `{ text, cursorTo }`.
 - Both texts are `INJECTION_HEADER + "\n" + …`.
 
 - [ ] **Step 5: Run the digest test until green, then the full gates and commit**
