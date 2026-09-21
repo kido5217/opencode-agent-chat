@@ -177,7 +177,7 @@ async function withRoot(prefix: string, work: (root: string) => Promise<void>): 
 
 function opencodeRunArgs(prompt: string): string[] {
   return [
-    "opencode2",
+    "opencode",
     "run",
     "--standalone",
     "--format",
@@ -236,7 +236,7 @@ function scaffold(root: string, projectPlugins: unknown[], globalPlugins?: unkno
 async function seedIsolatedState(root: string, project: string): Promise<void> {
   assert(existsSync(HOST_DB), `host opencode.db not found at ${HOST_DB}; cannot seed the isolated data dir`);
   mkdirSync(join(root, "data", "opencode"), { recursive: true });
-  const bootstrap = await runCommand(["opencode2", "session", "list", "--standalone", "--format", "json"], {
+  const bootstrap = await runCommand(["opencode", "session", "list", "--standalone", "--format", "json"], {
     cwd: project,
     env: xdgEnv(root),
     timeoutS: BOOTSTRAP_TIMEOUT_S,
@@ -244,7 +244,7 @@ async function seedIsolatedState(root: string, project: string): Promise<void> {
   });
   assert(
     bootstrap.exitCode === 0,
-    `bootstrap "opencode2 session list" exited ${bootstrap.exitCode} (log: ${bootstrap.logPath})`,
+    `bootstrap "opencode session list" exited ${bootstrap.exitCode} (log: ${bootstrap.logPath})`,
   );
   const host = new Database(HOST_DB, { readonly: true });
   const credentials = host
@@ -257,7 +257,7 @@ async function seedIsolatedState(root: string, project: string): Promise<void> {
     .get() as CatalogRow | null;
   host.close();
   assert(credentials.length > 0, `host opencode.db at ${HOST_DB} has no credential rows; the model would be unavailable`);
-  assert(catalog !== null, `host opencode.db at ${HOST_DB} has no models-dev:catalog kv row; model routing fails without it (run opencode2 against a provider on this host once to create it)`);
+  assert(catalog !== null, `host opencode.db at ${HOST_DB} has no models-dev:catalog kv row; model routing fails without it (run opencode against a provider on this host once to create it)`);
 
   const isolated = new Database(isolatedDbPath(root));
   const insertCredential = isolated.query(
@@ -436,7 +436,7 @@ async function chatScenarioBody(root: string): Promise<void> {
   }
 
   const exportPath = join(root, "session-export.json");
-  const exported = await runCommand(["opencode2", "session", "export", "--standalone", rootID], {
+  const exported = await runCommand(["opencode", "session", "export", "--standalone", rootID], {
     cwd: project,
     env: xdgEnv(root),
     timeoutS: EXPORT_TIMEOUT_S,
@@ -444,7 +444,7 @@ async function chatScenarioBody(root: string): Promise<void> {
   });
   assert(
     exported.exitCode === 0,
-    `"opencode2 session export" for ${rootID} exited ${exported.exitCode} (log: ${exportPath})`,
+    `"opencode session export" for ${rootID} exited ${exported.exitCode} (log: ${exportPath})`,
   );
   const transcript = JSON.parse(readFileSync(exportPath, "utf8")) as ExportData;
   const quoted = /QUESTION_ID=(\d+)/.exec(assistantText(transcript));
@@ -562,8 +562,8 @@ const scenarios = selectedScenarios(Bun.argv.slice(2));
 let failed = false;
 for (const scenario of scenarios) {
   try {
-    if (Bun.which("opencode2") === null) {
-      throw new SmokeError('opencode2 is not on PATH; run the smoke inside "nix develop"');
+    if (Bun.which("opencode") === null) {
+      throw new SmokeError('opencode is not on PATH; run the smoke inside "nix develop"');
     }
     if (scenario === "chat") await chatScenario();
     else await configScenario();
