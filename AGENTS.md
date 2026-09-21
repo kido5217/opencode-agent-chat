@@ -4,7 +4,7 @@ All development happens inside the Nix flake dev shell — never against the hos
 
 - Enter it with `nix develop`, or run a one-off command with `nix develop -c <cmd>` (e.g. `nix develop -c bun test`).
 - The shell pins the toolchain through `flake.nix` / `flake.lock`; add tooling there rather than to a host profile.
-- The smoke scenarios also expect the `opencode2` binary on `PATH`; it is not provided by the shell.
+- The smoke scenarios also expect the `opencode` binary on `PATH`; it is not provided by the shell.
 
 ## Git workflow
 
