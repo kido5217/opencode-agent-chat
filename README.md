@@ -15,7 +15,7 @@ chat demo · main, research · 1 open
 ## Install
 
 ```sh
-opencode2 plugin add opencode-agent-chat
+opencode plugin add opencode-agent-chat
 ```
 
 Options ride the plugin entry in your opencode config; all are optional:
@@ -102,14 +102,14 @@ Everything runs in the Nix dev shell:
 nix develop                        # enter the shell
 nix develop -c bun test            # unit tests
 nix develop -c bun run typecheck   # tsc --noEmit
-nix develop -c bun run smoke       # end-to-end; needs opencode2 on PATH
+nix develop -c bun run smoke       # end-to-end; needs opencode on PATH
 nix develop -c bun run src/cli.ts view   # the viewer, run from source
 ```
 
-The smoke scenarios build a temp project and drive `opencode2` against the plugin; pick one
+The smoke scenarios build a temp project and drive `opencode` against the plugin; pick one
 with `--scenario chat`, `--scenario config`, or `--scenario all` (default: all). They copy the
 credential and models-catalog rows from the host's opencode data directory into an isolated
-XDG home, so the host needs to have completed at least one `opencode2` request against a
+XDG home, so the host needs to have completed at least one `opencode` request against a
 provider.
 
 ## Limits

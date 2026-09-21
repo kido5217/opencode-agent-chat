@@ -311,7 +311,7 @@ Detail: #16.
   project with isolated XDG dirs and a copied data-dir `credential` row (or runs fail with
   `Model unavailable`), mounts the plugin as a directory through the project config with
   `{ chatDir, debug: true }`, and runs
-  `opencode2 run --standalone --format json --print-logs --auto --agent <probe-main>` with a
+  `opencode run --standalone --format json --print-logs --auto --agent <probe-main>` with a
   prompt that spawns one subagent which posts a `finding` and a `question` (>200 characters,
   ending in a tail marker), then has main read that question by id, list the roster, and
   answer it. The chat assertions also prove the full question body came back from `chat_read`.
@@ -362,7 +362,7 @@ Root-as-package layout (no monorepo): `src/plugin.ts` (adapter), `src/core/` (pu
 `flake.nix` devShell, `docs/chat-protocol.md` shipped via `files` (imported with Bun's
 `{ type: "text" }`), design docs, ADRs and `CONTEXT.md` at the root.
 
-Users install with `opencode2 plugin add opencode-agent-chat`; the host auto-installs bare npm
+Users install with `opencode plugin add opencode-agent-chat`; the host auto-installs bare npm
 targets into its XDG cache, so nothing is pre-installed by hand. Dev/dogfood uses a config
 path entry (`{"package": "/abs/path"}`); on 2.0.8 a local absolute directory target resolves
 physical `<dir>/server` or `<dir>/index` files and ignores `package.json` `exports`, so the
