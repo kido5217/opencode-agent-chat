@@ -1,5 +1,6 @@
 import { Plugin } from "@opencode/plugin";
 import protocolText from "../docs/chat-protocol.md" with { type: "text" };
+import taskDesignText from "../docs/task-design.md" with { type: "text" };
 import { ChatHandles, MAX_TO_CHARS } from "./core/handle.ts";
 import { ContextFilter } from "./core/context-filter.ts";
 import { writeChatDirMarker } from "./core/marker.ts";
@@ -186,6 +187,7 @@ export default Plugin.define({
         return;
       }
       event.system.push({ type: "text", text: protocolText });
+      event.system.push({ type: "text", text: taskDesignText });
       const delivery = handle.nextDelivery();
       if (delivery !== null) {
         event.system.push({ type: "text", text: delivery.text });

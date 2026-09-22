@@ -59,3 +59,7 @@ _Avoid_: Client, facade, connection
 **Transcript**:
 The human-facing rendered view of a chat. The CLI shows the full transcript; the TUI shows it windowed by default (the last 10 messages) and opens it in full on demand.
 _Avoid_: Log, history, feed, dump — the record itself is the **Chat**
+
+**Peer-required task**:
+A subagent task whose completion genuinely requires another participant's input — a fact or decision only a peer holds, not manufactured trivia.
+_Avoid_: Dependent task, collaborative task, blocking task

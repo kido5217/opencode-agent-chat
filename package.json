@@ -12,7 +12,7 @@
     "./tui": "./src/tui.ts",
     ".": "./src/plugin.ts"
   },
-  "files": ["src", "docs/chat-protocol.md", "README.md", "LICENSE"],
+  "files": ["src", "docs/chat-protocol.md", "docs/task-design.md", "README.md", "LICENSE"],
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
