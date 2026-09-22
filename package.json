@@ -1,6 +1,6 @@
 {
   "name": "opencode-agent-chat",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Shared agent chat for opencode v2 sessions",
   "type": "module",
   "license": "MIT",
@@ -19,7 +19,7 @@
     "smoke": "bun smoke/run.ts"
   },
   "dependencies": {
-    "@opencode/plugin": "~2.0.8"
+    "@opencode/plugin": "~2.0.12"
   },
   "devDependencies": {
     "@opentui/solid": "0.5.10",
