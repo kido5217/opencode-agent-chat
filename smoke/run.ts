@@ -74,6 +74,7 @@ Launch the subagent tool exactly once with agent "probe-child", description "wri
 Wait for the subagent to finish before doing anything else, then reply with exactly: MAIN-DONE`;
 
 const EVAL_BASELINE_REF = "89df0a0"; // 0.4.1: the pre-0.5.0 protocol text + rendering
+const EVAL_RUNS = 5; // model runs per scenario per arm; the behavior is stochastic, so we measure a rate
 
 class SmokeError extends Error {}
 
@@ -588,6 +589,12 @@ interface EvalCounts {
 
 const zeroCounts = (): EvalCounts => ({ questions: 0, answers: 0 });
 
+// Per-arm, per-scenario rate: how many of the N runs the child asked / answered / noised in.
+// A single run is not reliable (the model is stochastic), so the gate compares rates, not a
+// single outcome.
+type EvalRate = { runs: number; asked: number; answered: number; noised: number };
+const zeroRate = (): EvalRate => ({ runs: 0, asked: 0, answered: 0, noised: 0 });
+
 // Run one eval scenario for one arm: scaffold, mount the arm's source tree (current main for
 // "new", the 0.4.1 worktree for "baseline"), run the non-imperative prompt, and count the
 // child's question/answer posts from the chat DB (the only signal the protocol text moves).
@@ -646,37 +653,42 @@ async function evalScenario(): Promise<void> {
       `git worktree add ${EVAL_BASELINE_REF} failed (exit ${add.exitCode}; log ${join(baseRoot, "worktree.log")})`,
     );
     worktreeAdded = true;
-    const counts: Record<EvalArm, Record<EvalKey, EvalCounts>> = {
-      baseline: { ask: zeroCounts(), answer: zeroCounts(), noise: zeroCounts() },
-      new: { ask: zeroCounts(), answer: zeroCounts(), noise: zeroCounts() },
+    const rates: Record<EvalArm, Record<EvalKey, EvalRate>> = {
+      baseline: { ask: zeroRate(), answer: zeroRate(), noise: zeroRate() },
+      new: { ask: zeroRate(), answer: zeroRate(), noise: zeroRate() },
     };
     for (const arm of ["baseline", "new"] as EvalArm[]) {
       const srcRoot = arm === "baseline" ? wt : REPO_ROOT;
       for (const sc of EVAL_SCENARIOS) {
-        let result = zeroCounts();
-        await withRoot(`agent-chat-eval-${arm}-${sc.key}-`, async (root) => {
-          result = await runEvalArm(root, srcRoot, sc.prompt);
-        });
-        counts[arm][sc.key] = result;
+        for (let i = 0; i < EVAL_RUNS; i++) {
+          let result = zeroCounts();
+          await withRoot(`agent-chat-eval-${arm}-${sc.key}-${i}-`, async (root) => {
+            result = await runEvalArm(root, srcRoot, sc.prompt);
+          });
+          const r = rates[arm][sc.key];
+          r.runs += 1;
+          if (result.questions >= 1) r.asked += 1;
+          if (result.answers >= 1) r.answered += 1;
+          if (result.questions + result.answers >= 1) r.noised += 1;
+        }
       }
     }
-    const total = (c: EvalCounts) => c.questions + c.answers;
-    const b = counts.baseline;
-    const n = counts.new;
+    const b = rates.baseline;
+    const n = rates.new;
     console.log(
-      `eval — ask: baseline=${b.ask.questions} new=${n.ask.questions} | answer: baseline=${b.answer.answers} new=${n.answer.answers} | noise: baseline=${total(b.noise)} new=${total(n.noise)}`,
+      `eval (${EVAL_RUNS} runs/scenario) — ask: baseline=${b.ask.asked}/${b.ask.runs} new=${n.ask.asked}/${n.ask.runs} | answer: baseline=${b.answer.answered}/${b.answer.runs} new=${n.answer.answered}/${n.answer.runs} | noise: baseline=${b.noise.noised}/${b.noise.runs} new=${n.noise.noised}/${n.noise.runs}`,
     );
     assert(
-      n.ask.questions >= 1,
-      `ask not lifted: the new arm's child posted ${n.ask.questions} question(s) when blocked on a peer-only fact (baseline ${b.ask.questions}); expected >= 1`,
+      n.ask.asked >= 1 && n.ask.asked >= b.ask.asked,
+      `ask not lifted: the new arm's child asked in ${n.ask.asked}/${n.ask.runs} runs when blocked on a peer-only fact (baseline ${b.ask.asked}/${b.ask.runs}); expected >= 1 and >= baseline`,
     );
     assert(
-      n.answer.answers >= 1,
-      `answer not lifted: the new arm's child posted ${n.answer.answers} answer(s) to the seeded question (baseline ${b.answer.answers}); expected >= 1`,
+      n.answer.answered >= 1 && n.answer.answered >= b.answer.answered,
+      `answer not lifted: the new arm's child answered in ${n.answer.answered}/${n.answer.runs} runs on the seeded question (baseline ${b.answer.answered}/${b.answer.runs}); expected >= 1 and >= baseline`,
     );
     assert(
-      total(n.noise) <= total(b.noise),
-      `noise guard broken: the new arm's child posted ${total(n.noise)} question/answer(s) on the self-contained task vs ${total(b.noise)} baseline; the new text over-asks`,
+      n.noise.noised <= b.noise.noised,
+      `noise guard broken: the new arm's child posted in ${n.noise.noised}/${n.noise.runs} runs on the self-contained task vs ${b.noise.noised}/${b.noise.runs} baseline; the new text over-asks`,
     );
   } finally {
     if (worktreeAdded) {
