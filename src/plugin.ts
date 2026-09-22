@@ -2,6 +2,7 @@ import { Plugin } from "@opencode/plugin";
 import protocolText from "../docs/chat-protocol.md" with { type: "text" };
 import { ChatHandles, MAX_TO_CHARS } from "./core/handle.ts";
 import { ContextFilter } from "./core/context-filter.ts";
+import { writeChatDirMarker } from "./core/marker.ts";
 import { parseOptions } from "./core/options.ts";
 import { ChatError } from "./core/protocol.ts";
 import { debugLog, ensureChatDir } from "./core/storage.ts";
@@ -76,6 +77,11 @@ export default Plugin.define({
       ensureChatDir(options.chatDir, log);
     } catch (err) {
       log(`agent-chat: could not create chat directory ${options.chatDir}: ${String(err)}`);
+    }
+    try {
+      writeChatDirMarker(options.chatDir);
+    } catch (err) {
+      log(`agent-chat: could not write chat dir marker: ${String(err)}`);
     }
 
     const handles = new ChatHandles({ options, now: () => Date.now(), warn: log });

@@ -18,12 +18,19 @@ export const DEFAULTS = {
   debug: false,
 } as const;
 
-export function defaultChatDir(
+export function dataBaseDir(
   env: Record<string, string | undefined> = process.env,
   home: string = homedir(),
 ): string {
   const xdg = env.XDG_DATA_HOME;
-  return join(xdg && xdg.length > 0 ? xdg : join(home, ".local", "share"), "opencode", "chats");
+  return xdg && xdg.length > 0 ? xdg : join(home, ".local", "share");
+}
+
+export function defaultChatDir(
+  env: Record<string, string | undefined> = process.env,
+  home: string = homedir(),
+): string {
+  return join(dataBaseDir(env, home), "opencode", "chats");
 }
 
 type Warn = (msg: string) => void;
