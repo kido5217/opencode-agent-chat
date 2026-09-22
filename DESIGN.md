@@ -147,9 +147,9 @@ membership hydrates on first sight of a session (`v2-event-bus.md`).
 
 - **Roster** is live-only: name, agent type, session id, busy/idle, joined-at. A finished
   session is absent.
-- **Naming**: root is `main`; a subagent uses its agent type as its name; a `-2` suffix (then
-  `-3`, …) only on a live collision. `sender_name` is frozen per message at post time, so
-  history never rewrites itself.
+- **Naming**: root is `main`; a subagent is named `<agent_type>-<8 random a-z0-9 chars>`,
+  redrawn to a fresh suffix on a live collision. `sender_name` is frozen per message at
+  post time, so history never rewrites itself.
 - **Busy/idle** comes from the execution events and does not change membership.
 - A re-prompted session rejoins (recorded). Chat files of gone sessions are left in place.
 - System rows are the chat's own record: the plugin writes them, they are excluded from post
