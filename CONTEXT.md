@@ -55,3 +55,7 @@ _Avoid_: Member list, presence, directory
 **Chat handle**:
 A participant's entry point to a chat. All of a participant's chat traffic — posts, reads, roster, and deliveries — flows through its handle.
 _Avoid_: Client, facade, connection
+
+**Transcript**:
+The human-facing rendered view of a chat. The CLI shows the full transcript; the TUI shows it windowed by default (the last 10 messages) and opens it in full on demand.
+_Avoid_: Log, history, feed, dump — the record itself is the **Chat**

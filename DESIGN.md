@@ -39,7 +39,7 @@ Four pieces, one dependency direction: core ← adapter, core ← viewer, core �
 | Core | `src/core/` | Pure TypeScript: storage, message protocol, digest, membership, the participants' chat handles, options, migrations, transcript. No opencode imports; `bun:sqlite` is the only runtime dependency. |
 | Adapter | `src/plugin.ts` | The installed plugin. Wires opencode into core through the chat handle registry: event subscription, context-hook injection, synthetic-transcript filtering, tool registration. Thin and branch-free — every chat verb flows through a participant's handle. |
 | Viewer | `src/cli.ts` | `agent-chat` CLI. Reads chat files directly; never imports the plugin. |
-| TUI entry | `src/tui.ts` | The in-TUI `/agent-chat` command. Resolves the active session's root chat and appends its transcript through `client.session.synthetic`. Thin adapter over `src/core/transcript.ts`. |
+| TUI entry | `src/tui.ts`, `src/panel.tsx` | The in-TUI `/agent-chat` command. Resolves the active session's root chat and posts a windowed transcript notice (last 10 messages over 10) through `client.session.synthetic`; `/agent-chat full` opens a fullscreen `session.panel` self-rendering the full transcript. Thin adapter over `src/core/transcript.ts`. |
 
 Runtime facts that shape this (all verified in `docs/research/`):
 
@@ -292,23 +292,33 @@ the human observes.
 - Prototype on branch `prototype/minimal-viewer` (`prototype/minimal-viewer.ts`,
   `prototype/seed-demo.ts`) is the visual reference, not code to keep.
 
-**In-TUI command (0.2.0).** `/agent-chat` renders the active session's root chat through
-`src/core/transcript.ts` and appends it with `client.session.synthetic({ sessionID, text,
-description, resume: false })` — the verified route (`020-synthetic-route.md`): the transcript
-rides in `description` as one subdued `◈` notice, no model turn starts, and the notice persists
-in the transcript and in `session export`. The notice wrapper prevents byte-identical chrome;
-the text itself is line-for-line the viewer's. The TUI entry registers its keymap layer from an
-`app` slot render (a Solid owner; a layer registered directly in `setup` registered nothing on
-2.0.8) and reads `chatDir` from its own `cli.json` options — `opencode.json` plugin options do
-not reach the TUI layer. A fullscreen `session.panel` remains the fallback surface if the notice
-proves unusable for long chats.
+**In-TUI command (0.2.0; windowed in 0.4.0).** `/agent-chat` renders the active session's root
+chat through `src/core/transcript.ts` and appends it with `client.session.synthetic({
+sessionID, text, description, resume: false })` — the verified route
+(`020-synthetic-route.md`): the transcript rides in `description` as one subdued `◈` notice, no
+model turn starts, and the notice persists in the transcript and in `session export`. The
+notice wrapper prevents byte-identical chrome; the text itself is line-for-line the viewer's.
+Since 0.4.0 the notice is windowed: over 10 messages it carries the header line plus the last
+10 messages (system join/leave lines count), labeled
+`agent-chat transcript for <root> · showing last 10 of N · /agent-chat full`; at or below 10
+messages the full notice goes out unchanged. The window is message-level — a message is never
+cut mid-wrap — and the header line is computed over the full list. `/agent-chat full` (slash
+argument via `KeymapCommand.slash.arguments`, plus a palette entry; no keybind) opens the
+expand surface the 0.2.0 note anticipated: a fullscreen `session.panel` the plugin claims and
+self-renders — a `agent-chat transcript for <root> · N messages` header over the full
+transcript from the same renderer. The panel content is a Solid signal set on each open, so
+re-invoking `/agent-chat full` re-reads and re-renders (refresh); closing is the host's panel
+chrome. The TUI entry registers its keymap layer from an `app` slot render (a Solid owner; a
+layer registered directly in `setup` registered nothing on 2.0.8) and reads `chatDir` from its
+own `cli.json` options — `opencode.json` plugin options do not reach the TUI layer.
 
 ## 11. Testing and smoke loop
 
 Detail: #16.
 
 - **Unit**: `bun test`, no extra framework. Test files mirror `src/core/` modules (storage,
-  protocol, digest, membership, handle, options, migrations, render, types), plus a viewer
+  protocol, digest, membership, handle, options, migrations, render, types, window,
+   transcript), plus a viewer
   wrap/render contract test. The chat handle is the test surface for protocol, digest, and
   guard behaviour: the regression scenarios below run through its interface, not the
   internal functions. Each test gets a fresh **temp-file**
@@ -366,7 +376,8 @@ Detail: #17, `v2-plugin-packaging.md` §10.
 | SDK | `@opencode/plugin` allowed the `~2.0.8` range (floor `2.0.8`); the dev lock stays at the floor, and each release re-proves the top of the range (scratch-worktree bump → `bun test` + typecheck, recorded on the release ticket) |
 
 Root-as-package layout (no monorepo): `src/plugin.ts` (adapter), `src/core/` (pure core),
-`src/cli.ts` (viewer), `src/tui.ts` (TUI entry), `test/` mirrors core, `smoke/` scenarios,
+`src/cli.ts` (viewer), `src/tui.ts` + `src/panel.tsx` (TUI entry), `test/` mirrors core,
+`smoke/` scenarios,
 `flake.nix` devShell, `docs/chat-protocol.md` shipped via `files` (imported with Bun's
 `{ type: "text" }`), design docs, ADRs and `CONTEXT.md` at the root.
 

@@ -61,8 +61,10 @@ TUI options come from `cli.json`, not `opencode.json`:
 }
 ```
 
-Without an entry, the same default `chatDir` applies. A long chat renders inside a single
-notice block (no collapse or scroll); the line format matches `agent-chat view`.
+Without an entry, the same default `chatDir` applies. Long chats are windowed: over 10
+messages the notice shows the last 10 (system join/leave lines count) marked
+`showing last 10 of N`; 10 or fewer go out in full. `/agent-chat full` opens a fullscreen
+panel with the complete transcript; the line format matches `agent-chat view` either way.
 
 ## Options
 
