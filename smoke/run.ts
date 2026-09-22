@@ -385,20 +385,32 @@ async function chatScenarioBody(root: string): Promise<void> {
     .all() as MessageRow[];
   db.close();
 
+  const joinRow = messages.find(
+    (m) =>
+      m.sender_type === "system" &&
+      m.sender_name === "system" &&
+      m.kind === "system" &&
+      /^probe-child-[a-z0-9]{8} joined$/.test(m.body),
+  );
+  assert(joinRow !== undefined, `${dbPath} lacks a system join row matching "probe-child-<8 random a-z0-9> joined"`);
+  const probeChildName = joinRow.body.slice(0, -" joined".length);
+  assert(
+    /^probe-child-[a-z0-9]{8}$/.test(probeChildName),
+    `join row body ${JSON.stringify(joinRow.body)} did not yield a probe-child name`,
+  );
   const systemRow = (body: string) =>
     messages.some(
       (m) => m.sender_type === "system" && m.sender_name === "system" && m.kind === "system" && m.body === body,
     );
-  assert(systemRow("probe-child joined"), `${dbPath} lacks the system join row "probe-child joined"`);
-  assert(systemRow("probe-child left (completed)"), `${dbPath} lacks the system leave row "probe-child left (completed)"`);
+  assert(systemRow(`${probeChildName} left (completed)`), `${dbPath} lacks the system leave row "${probeChildName} left (completed)"`);
   const finding = messages.find(
-    (m) => m.sender_type === "agent" && m.sender_name === "probe-child" && m.kind === "finding",
+    (m) => m.sender_type === "agent" && m.sender_name === probeChildName && m.kind === "finding",
   );
-  assert(finding !== undefined, `${dbPath} lacks a finding posted by probe-child`);
+  assert(finding !== undefined, `${dbPath} lacks a finding posted by ${probeChildName}`);
   const question = messages.find(
-    (m) => m.sender_type === "agent" && m.sender_name === "probe-child" && m.kind === "question",
+    (m) => m.sender_type === "agent" && m.sender_name === probeChildName && m.kind === "question",
   );
-  assert(question !== undefined, `${dbPath} lacks a question posted by probe-child`);
+  assert(question !== undefined, `${dbPath} lacks a question posted by ${probeChildName}`);
   const answer = messages.find(
     (m) => m.sender_type === "agent" && m.sender_name === "main" && m.kind === "answer" && m.in_reply_to === question.id,
   );

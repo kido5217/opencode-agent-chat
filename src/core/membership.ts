@@ -1,5 +1,15 @@
 import type { Participant } from "./types.ts";
 
+const ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
+
+function drawSuffix(): string {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  let out = "";
+  for (const b of bytes) out += ALPHABET[b % 36]!;
+  return out;
+}
+
 export interface SessionInfo {
   id: string;
   parentID?: string | null;
@@ -142,8 +152,8 @@ export class Membership {
       if (other === member || !other.live || other.name === null) continue;
       if (this.rootFor(other.id) === root) taken.add(other.name);
     }
-    let name = base;
-    for (let suffix = 2; taken.has(name); suffix++) name = `${base}-${suffix}`;
+    let name = `${base}-${drawSuffix()}`;
+    while (taken.has(name)) name = `${base}-${drawSuffix()}`;
     member.name = name;
     return name;
   }

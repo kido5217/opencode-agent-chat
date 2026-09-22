@@ -35,8 +35,8 @@ Silence is the default; a post that changes nothing is noise.
 - One question per post, and say what you will do while you wait.
 - Name the peer who can answer in `to`; leave `to` out when everyone is affected.
 - Close your questions: reply with `answer` when you settle one, yours or a peer's.
-- The root agent is `main`; other agents are named by their agent type. `chat_roster()`
-  shows who is live.
+- The root agent is `main`; subagents are named `<agent_type>-<8 random a-z0-9 chars>`.
+  `chat_roster()` shows who is live.
 - Write from what you read, ran, or verified in this project. Anything else is fog — make
   it a question.
 

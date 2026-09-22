@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Membership } from "../src/core/membership.ts";
 
+const re = (type: string) => new RegExp(`^${type}-[a-z0-9]{8}$`);
+
 function setup() {
   const rows: Array<{ root: string; body: string }> = [];
   let now = 1;
@@ -106,7 +108,7 @@ describe("repeated starts and reconcile", () => {
     membership.reconcile([{ id: "root", agentType: "build", live: true }]);
     expect(membership.isLive("kid")).toBe(false);
     expect(membership.roster("root").map((p) => p.name)).toEqual(["main"]);
-    expect(rows.map((r) => r.body)).toEqual(["main joined", "explore joined"]);
+    expect(rows.map((r) => r.body)).toEqual(["main joined", `${membership.nameFor("kid")} joined`]);
   });
 });
 
@@ -127,22 +129,26 @@ describe("child naming", () => {
     setNow(4);
     membership.executionStarted("c3");
 
-    expect(membership.nameFor("c1")).toBe("explore");
-    expect(membership.nameFor("c2")).toBe("explore-2");
-    expect(membership.nameFor("c3")).toBe("explore-3");
+    const n1 = membership.nameFor("c1")!;
+    const n2 = membership.nameFor("c2")!;
+    const n3 = membership.nameFor("c3")!;
+    expect(n1).toMatch(re("explore"));
+    expect(n2).toMatch(re("explore"));
+    expect(n3).toMatch(re("explore"));
+    expect(new Set([n1, n2, n3]).size).toBe(3);
     expect(rows).toEqual([
       { root: "root", body: "main joined" },
-      { root: "root", body: "explore joined" },
-      { root: "root", body: "explore-2 joined" },
-      { root: "root", body: "explore-3 joined" },
+      { root: "root", body: `${n1} joined` },
+      { root: "root", body: `${n2} joined` },
+      { root: "root", body: `${n3} joined` },
     ]);
-    expect(membership.roster("root").map((p) => p.name)).toEqual(["main", "explore", "explore-2", "explore-3"]);
+    expect(membership.roster("root").map((p) => p.name)).toEqual(["main", n1, n2, n3]);
 
     setNow(5);
     membership.executionEnded("c1", "completed");
     setNow(6);
     membership.executionStarted("c1");
-    expect(membership.nameFor("c1")).toBe("explore");
+    expect(membership.nameFor("c1")).toBe(n1);
   });
 
   test("a name held by a gone participant frees up", () => {
@@ -161,15 +167,23 @@ describe("child naming", () => {
     membership.executionEnded("c1", "completed");
     setNow(5);
     membership.executionStarted("c3");
-    expect(membership.nameFor("c3")).toBe("explore");
-    expect(membership.roster("root").map((p) => p.name)).toEqual(["main", "explore-2", "explore"]);
+    const n1 = membership.nameFor("c1")!;
+    const n2 = membership.nameFor("c2")!;
+    const n3 = membership.nameFor("c3")!;
+    expect(n1).toMatch(re("explore"));
+    expect(n2).toMatch(re("explore"));
+    expect(n3).toMatch(re("explore"));
+    expect(n3).not.toBe(n2);
+    expect(membership.roster("root").map((p) => p.name)).toEqual(["main", n2, n3]);
 
     setNow(6);
     membership.executionEnded("c2", "completed");
     setNow(7);
     membership.sessionCreated({ id: "c4", parentID: "root", agentType: "explore" });
     membership.executionStarted("c4");
-    expect(membership.nameFor("c4")).toBe("explore-2");
+    const n4 = membership.nameFor("c4")!;
+    expect(n4).toMatch(re("explore"));
+    expect(n4).not.toBe(n3);
   });
 
   test("a rejoin keeps the frozen name and emits a second join row", () => {
@@ -187,16 +201,21 @@ describe("child naming", () => {
     membership.executionStarted("c2");
     setNow(5);
     membership.executionStarted("c1");
-    expect(membership.nameFor("c1")).toBe("explore");
+    const n1 = membership.nameFor("c1")!;
+    const n2 = membership.nameFor("c2")!;
+    expect(n1).toMatch(re("explore"));
+    expect(n2).toMatch(re("explore"));
+    expect(n2).not.toBe(n1);
+    expect(membership.nameFor("c1")).toBe(n1);
     expect(membership.isLive("c1")).toBe(true);
-    expect(membership.roster("root").map((p) => p.name)).toEqual(["main", "explore", "explore"]);
+    expect(membership.roster("root").map((p) => p.name)).toEqual(["main", n2, n1]);
     expect(membership.roster("root").map((p) => p.sessionID)).toEqual(["root", "c2", "c1"]);
     expect(rows).toEqual([
       { root: "root", body: "main joined" },
-      { root: "root", body: "explore joined" },
-      { root: "root", body: "explore left (completed)" },
-      { root: "root", body: "explore joined" },
-      { root: "root", body: "explore joined" },
+      { root: "root", body: `${n1} joined` },
+      { root: "root", body: `${n1} left (completed)` },
+      { root: "root", body: `${n2} joined` },
+      { root: "root", body: `${n1} joined` },
     ]);
   });
 
@@ -205,11 +224,12 @@ describe("child naming", () => {
     membership.sessionCreated({ id: "root" });
     membership.sessionCreated({ id: "c1", parentID: "root" });
     membership.executionStarted("c1");
-    expect(membership.nameFor("c1")).toBe("subagent");
-    expect(rows).toEqual([{ root: "root", body: "subagent joined" }]);
+    const n1 = membership.nameFor("c1")!;
+    expect(n1).toMatch(re("subagent"));
+    expect(rows).toEqual([{ root: "root", body: `${n1} joined` }]);
     expect(membership.roster("root")[0]).toEqual({
       sessionID: "c1",
-      name: "subagent",
+      name: n1,
       agentType: "subagent",
       busy: true,
       joinedAt: 1,
@@ -224,8 +244,10 @@ describe("child naming", () => {
     membership.sessionCreated({ id: "b", parentID: "root2", agentType: "explore" });
     membership.executionStarted("a");
     membership.executionStarted("b");
-    expect(membership.nameFor("a")).toBe("explore");
-    expect(membership.nameFor("b")).toBe("explore");
+    const na = membership.nameFor("a")!;
+    const nb = membership.nameFor("b")!;
+    expect(na).toMatch(re("explore"));
+    expect(nb).toMatch(re("explore"));
   });
 
   test("main is reserved for the root even when a child starts first", () => {
@@ -234,15 +256,16 @@ describe("child naming", () => {
     membership.sessionCreated({ id: "c1", parentID: "root", agentType: "main" });
     setNow(1);
     membership.executionStarted("c1");
-    expect(membership.nameFor("c1")).toBe("main-2");
+    const n1 = membership.nameFor("c1")!;
+    expect(n1).toMatch(re("main"));
     setNow(2);
     membership.executionStarted("root");
     expect(membership.nameFor("root")).toBe("main");
     expect(rows).toEqual([
-      { root: "root", body: "main-2 joined" },
+      { root: "root", body: `${n1} joined` },
       { root: "root", body: "main joined" },
     ]);
-    expect(membership.roster("root").map((p) => p.name)).toEqual(["main-2", "main"]);
+    expect(membership.roster("root").map((p) => p.name)).toEqual([n1, "main"]);
   });
 });
 
@@ -254,8 +277,8 @@ describe("lineage", () => {
     membership.sessionCreated({ id: "grand", parentID: "child", agentType: "explore" });
     expect(membership.rootFor("grand")).toBe("root");
     membership.executionStarted("grand");
-    expect(membership.nameFor("grand")).toBe("explore");
-    expect(rows).toEqual([{ root: "root", body: "explore joined" }]);
+    expect(membership.nameFor("grand")).toMatch(re("explore"));
+    expect(rows).toEqual([{ root: "root", body: `${membership.nameFor("grand")} joined` }]);
   });
 
   test("a parent that appears later repairs root resolution", () => {
@@ -279,10 +302,10 @@ describe("lineage", () => {
     ]);
     expect(rows).toEqual([]);
     expect(membership.rootFor("child")).toBe("root");
-    expect(membership.nameFor("child")).toBe("explore");
+    expect(membership.nameFor("child")).toMatch(re("explore"));
     expect(membership.isLive("child")).toBe(true);
     expect(membership.isLive("missing")).toBe(false);
-    expect(membership.roster("root").map((p) => p.name)).toEqual(["explore", "main"]);
+    expect(membership.roster("root").map((p) => p.name)).toEqual([membership.nameFor("child")!, "main"]);
   });
 });
 
@@ -297,25 +320,29 @@ describe("reconcile", () => {
       { id: "gone", parentID: "root", agentType: "explore", live: false },
     ]);
     expect(rows).toEqual([]);
+    const na = membership.nameFor("a")!;
+    const nb = membership.nameFor("b")!;
     expect(membership.nameFor("root")).toBe("main");
-    expect(membership.nameFor("a")).toBe("explore");
-    expect(membership.nameFor("b")).toBe("explore-2");
+    expect(na).toMatch(re("explore"));
+    expect(nb).toMatch(re("explore"));
+    expect(new Set([na, nb]).size).toBe(2);
     expect(membership.nameFor("gone")).toBeNull();
     expect(membership.isLive("gone")).toBe(false);
     expect(membership.roster("root")).toEqual([
       { sessionID: "root", name: "main", agentType: "build", busy: true, joinedAt: 7 },
-      { sessionID: "a", name: "explore", agentType: "explore", busy: true, joinedAt: 7 },
-      { sessionID: "b", name: "explore-2", agentType: "explore", busy: true, joinedAt: 7 },
+      { sessionID: "a", name: na, agentType: "explore", busy: true, joinedAt: 7 },
+      { sessionID: "b", name: nb, agentType: "explore", busy: true, joinedAt: 7 },
     ]);
 
     setNow(8);
     membership.executionEnded("a", "failed");
-    expect(rows).toEqual([{ root: "root", body: "explore left (failed)" }]);
+    expect(rows).toEqual([{ root: "root", body: `${na} left (failed)` }]);
 
     setNow(9);
     membership.sessionCreated({ id: "c", parentID: "root", agentType: "explore" });
     membership.executionStarted("c");
-    expect(membership.nameFor("c")).toBe("explore");
+    const nc = membership.nameFor("c")!;
+    expect(nc).toMatch(re("explore"));
   });
 
   test("a live session that is already registered keeps its name and join time", () => {
@@ -349,7 +376,12 @@ describe("roster", () => {
     membership.executionStarted("a");
     setNow(3);
     membership.executionStarted("b");
-    expect(membership.roster("root").map((p) => p.name)).toEqual(["main", "explore", "plan"]);
+    const na = membership.nameFor("a")!;
+    const nb = membership.nameFor("b")!;
+    expect(na).toMatch(re("explore"));
+    expect(nb).toMatch(re("plan"));
+    expect(na).not.toBe(nb);
+    expect(membership.roster("root").map((p) => p.name)).toEqual(["main", na, nb]);
 
     setNow(4);
     membership.executionEnded("a", "completed");
@@ -357,7 +389,7 @@ describe("roster", () => {
     membership.executionStarted("b");
     setNow(6);
     membership.executionStarted("a");
-    expect(membership.roster("root").map((p) => p.name)).toEqual(["main", "plan", "explore"]);
+    expect(membership.roster("root").map((p) => p.name)).toEqual(["main", nb, na]);
     expect(membership.roster("other")).toEqual([]);
   });
 });

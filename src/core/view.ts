@@ -3,7 +3,7 @@ import type { Kind, Message } from "./types.ts";
 
 export const LINE_WIDTH = 100;
 export const MIN_BODY_WIDTH = 32;
-export const SENDER_MAX = 16;
+export const SENDER_MAX = 24;
 export const TO_MAX = 24;
 
 export const GLYPHS: Record<Kind, string> = {
