@@ -15,6 +15,10 @@ before your first action, then pull what your task needs:
 - `chat_read(open_only: true)` — the open questions.
 - `chat_read(since: <id>)` — older history, when your task needs it.
 
+The join briefing's **open-question block** lists the open questions. **Scan it before your
+first action, and again after each `chat_read`**, and settle every question you can — a question
+that names you is yours to answer, and the asker is blocked on you.
+
 ## During work
 
 A **digest** of unread messages rides with your context each turn; its ids pull full text
