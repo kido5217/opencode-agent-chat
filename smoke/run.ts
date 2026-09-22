@@ -1,9 +1,23 @@
 import { Database } from "bun:sqlite";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { sanitize } from "../src/core/render.ts";
+import {
+  classifyRunOutcome,
+  gateFailures,
+  METRIC_BY_KEY,
+  recordRun,
+  zeroCounts,
+  zeroRates,
+  type EvalArm,
+  type EvalCounts,
+  type EvalKey,
+  type EvalRates,
+} from "./eval-gate.ts";
+import { CHAT_TIMEOUT_S, evalArtifactsRoot, listEvalDirs } from "./harness.ts";
+import { judgeAggregateLine, runJudge, type JudgeRunInput } from "./judge.ts";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const HOST_DATA = join(homedir(), ".local", "share", "opencode");
@@ -12,7 +26,6 @@ const HOST_AUTH = join(HOST_DATA, "auth.json");
 const MODEL = "deepseek/deepseek-flash";
 const SMOKE_TAIL = "SMOKE-TAIL-7f3a";
 const BOOTSTRAP_TIMEOUT_S = 120;
-const CHAT_TIMEOUT_S = 600;
 const CONFIG_TIMEOUT_S = 180;
 const EXPORT_TIMEOUT_S = 120;
 const PLUGIN_ID = "opencode-agent-chat";
@@ -57,9 +70,12 @@ const CONFIG_PROMPT = "reply with the single word ok";
 // text's effect is measured on). The existing chat scenario scripts the behavior; the eval
 // does not. The measured posts are probe-child's question/answer posts (the parent
 // probe-main only posts the S2 setup question).
+// S1 ask: the child task is BOUNDED (concrete file + concrete place to look —
+// docs/staging.md), which kills the unbounded-`find /` timeout artifact (#88
+// defect B) without touching the non-imperative constraint (#79 lock).
 const EVAL_ASK = `You are probe-main. The internal codename of this project's staging environment is "bluefin". Keep that value to yourself; do not put it into any instruction you give the subagent.
 Launch the subagent tool exactly once with agent "probe-child", description "label the config", and this prompt:
-"Add a 'stagingCodename' field to config.json set to the internal codename of the staging environment. When you are done, reply with exactly the value you set it to."
+"config.json in this project needs a 'stagingCodename' field set to the internal codename of the staging environment. docs/staging.md says where staging configuration values come from; check it. When you are done, reply with exactly the value you set it to."
 Wait for the subagent to finish before doing anything else, then reply with exactly: MAIN-DONE`;
 
 const EVAL_ANSWER = `You are probe-main.
@@ -73,8 +89,22 @@ Launch the subagent tool exactly once with agent "probe-child", description "wri
 "Create hello.txt containing exactly the text: hi. When the file is written, reply with exactly: DONE"
 Wait for the subagent to finish before doing anything else, then reply with exactly: MAIN-DONE`;
 
+// S4 delegate (the #90 lock): main COMPOSES the peer-required briefing itself — the
+// scenario measures the task-design guidance (docs/task-design.md). A well-briefed
+// main withholds the main-owned codename and the child asks; a briefing that inlines
+// it lets the child complete silently. Non-imperative about the briefing's content
+// (the #79 lock): the prompt fixes what main must delegate, not how to brief it.
+const EVAL_DELEGATE = `You are probe-main.
+You know the internal codename of this project's staging environment: "bluefin".
+A change is needed in this project: config.json must gain a "stagingCodename" field set to the internal codename of the staging environment.
+Delegate this change to the probe-child subagent (launch the subagent tool with agent "probe-child"). Decide how to brief the child for this task.
+Wait for the subagent to finish before doing anything else, then reply with exactly: MAIN-DONE`;
+
+// Rolling baseline (#91 lock): after each release, point this at the new release
+// tag so every text change measures its marginal delta against the shipped text.
 const EVAL_BASELINE_REF = "89df0a0"; // 0.4.1: the pre-0.5.0 protocol text + rendering
 const EVAL_RUNS = 5; // model runs per scenario per arm; the behavior is stochastic, so we measure a rate
+const EVAL_ARTIFACTS_KEEP = 3; // retained eval dirs; pruned to the last 3 (the #90 retention lock)
 
 class SmokeError extends Error {}
 
@@ -253,6 +283,13 @@ function scaffold(root: string, projectPlugins: unknown[], globalPlugins?: unkno
   );
   writeFileSync(join(project, ".opencode", "agents", "probe-main.md"), MAIN_AGENT);
   writeFileSync(join(project, ".opencode", "agents", "probe-child.md"), CHILD_AGENT);
+  // The ask scenario's bounded "place to look" (the #90 lock): a concrete file that
+  // says the staging values are not recorded in the repo. Inert for the other scenarios.
+  mkdirSync(join(project, "docs"), { recursive: true });
+  writeFileSync(
+    join(project, "docs", "staging.md"),
+    "Staging configuration values — including the staging environment's internal codename — are internal team secrets and are not recorded in this repository.\n",
+  );
   if (globalPlugins !== undefined) {
     mkdirSync(join(root, "config", "opencode"), { recursive: true });
     writeFileSync(
@@ -582,65 +619,99 @@ async function configScenario(): Promise<void> {
   });
 }
 
-interface EvalCounts {
-  questions: number;
-  answers: number;
+const EVAL_SCENARIOS: { key: EvalKey; prompt: string }[] = [
+  { key: "ask", prompt: EVAL_ASK },
+  { key: "answer", prompt: EVAL_ANSWER },
+  { key: "noise", prompt: EVAL_NOISE },
+  { key: "delegate", prompt: EVAL_DELEGATE },
+] as const;
+
+interface EvalRunResult {
+  counts: EvalCounts;
+  outcome: ReturnType<typeof classifyRunOutcome>;
+  root: string;
 }
 
-const zeroCounts = (): EvalCounts => ({ questions: 0, answers: 0 });
-
-// Per-arm, per-scenario rate: how many of the N runs the child asked / answered / noised in.
-// A single run is not reliable (the model is stochastic), so the gate compares rates, not a
-// single outcome.
-type EvalRate = { runs: number; asked: number; answered: number; noised: number };
-const zeroRate = (): EvalRate => ({ runs: 0, asked: 0, answered: 0, noised: 0 });
-
-// Run one eval scenario for one arm: scaffold, mount the arm's source tree (current main for
-// "new", the 0.4.1 worktree for "baseline"), run the non-imperative prompt, and count the
-// child's question/answer posts from the chat DB (the only signal the protocol text moves).
-async function runEvalArm(root: string, srcRoot: string, prompt: string): Promise<EvalCounts> {
+// Run one eval scenario once, for one arm: scaffold, mount the arm's source tree
+// (this working tree for "new", the baseline worktree for "baseline"), run the
+// non-imperative prompt, classify the run from the harness exit code, and count
+// the child's question/answer posts from the chat DB (the only signal the
+// protocol text moves). The run root is created under the retained artifacts dir
+// and is NEVER deleted — per-run evidence must survive the run (the #90 retention
+// lock; the rmSync that destroyed it is the #88 defect D).
+async function runEvalRun(artifactsDir: string, name: string, srcRoot: string, prompt: string): Promise<EvalRunResult> {
+  const root = mkdtempSync(join(artifactsDir, name));
   const chatsDir = join(root, "chats");
   const project = scaffold(root, [mountEntry(root, chatsDir)]);
   mountPluginAt(root, srcRoot);
   await seedIsolatedState(root, project);
-  await runCommand(opencodeRunArgs(prompt), {
+  const run = await runCommand(opencodeRunArgs(prompt), {
     cwd: project,
     env: xdgEnv(root),
     timeoutS: CHAT_TIMEOUT_S,
     logPath: join(root, "eval-run.log"),
   });
-  const dbs = existsSync(chatsDir) ? readdirSync(chatsDir).filter((name) => name.endsWith(".db")) : [];
-  if (dbs.length === 0) return zeroCounts();
-  const dbFile = dbs[0];
-  assert(dbFile !== undefined, `no chat DB under ${chatsDir}`);
-  const db = new Database(join(chatsDir, dbFile), { readonly: true });
-  try {
-    const rows = db
-      .query("select kind, sender_name from messages where sender_type = 'agent'")
-      .all() as { kind: string; sender_name: string }[];
-    const childPosts = rows.filter((r) => /^probe-child-[a-z0-9]{8}$/.test(r.sender_name));
-    return {
-      questions: childPosts.filter((r) => r.kind === "question").length,
-      answers: childPosts.filter((r) => r.kind === "answer").length,
-    };
-  } finally {
-    db.close();
+  const dbs = existsSync(chatsDir) ? readdirSync(chatsDir).filter((n) => n.endsWith(".db")) : [];
+  let counts = zeroCounts();
+  if (dbs.length > 0) {
+    const dbFile = dbs[0];
+    assert(dbFile !== undefined, `no chat DB under ${chatsDir}`);
+    const db = new Database(join(chatsDir, dbFile), { readonly: true });
+    try {
+      const rows = db
+        .query("select kind, sender_name from messages where sender_type = 'agent'")
+        .all() as { kind: string; sender_name: string }[];
+      const childPosts = rows.filter((r) => /^probe-child-[a-z0-9]{8}$/.test(r.sender_name));
+      counts = {
+        questions: childPosts.filter((r) => r.kind === "question").length,
+        answers: childPosts.filter((r) => r.kind === "answer").length,
+      };
+    } finally {
+      db.close();
+    }
+  }
+  return { counts, outcome: classifyRunOutcome(run.exitCode), root };
+}
+
+// One retained artifacts dir per eval: $XDG_DATA_HOME/opencode/eval/<UTC stamp>/
+function newEvalDir(): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const dir = join(evalArtifactsRoot(), stamp);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+// Prune retained eval dirs to the last EVAL_ARTIFACTS_KEEP (names are UTC stamps,
+// so name order is time order).
+function pruneEvalDirs(): void {
+  const root = evalArtifactsRoot();
+  const dirs = listEvalDirs(root).sort();
+  for (const d of dirs.slice(0, -EVAL_ARTIFACTS_KEEP)) {
+    rmSync(join(root, d), { recursive: true, force: true });
   }
 }
 
-const EVAL_SCENARIOS = [
-  { key: "ask", prompt: EVAL_ASK },
-  { key: "answer", prompt: EVAL_ANSWER },
-  { key: "noise", prompt: EVAL_NOISE },
-] as const;
-
-type EvalKey = (typeof EVAL_SCENARIOS)[number]["key"];
-type EvalArm = "baseline" | "new";
+// Per-arm, per-scenario rate over 5 runs: the model is stochastic, so the gate
+// compares rates, not a single outcome. Honest counts (the #90 lock): every run is
+// classified from the harness exit code and behavior is asserted over the
+// completed subset only — a killed or crashed run is not "did not ask".
+function rateCell(arm: EvalArm, key: EvalKey, rates: EvalRates): string {
+  const r = rates[arm][key];
+  const metric = METRIC_BY_KEY[key];
+  const skipped: string[] = [];
+  if (r.killedAtCap > 0) skipped.push(`${r.killedAtCap} cap`);
+  if (r.crashed > 0) skipped.push(`${r.crashed} crash`);
+  const breakdown = skipped.length > 0 ? ` (${skipped.join(", ")})` : "";
+  return `${r.completed}/${r.runs} completed${breakdown}, ${metric} ${r[metric]}/${r.completed}`;
+}
 
 async function evalScenario(): Promise<void> {
-  const baseRoot = mkdtempSync(join(tmpdir(), "agent-chat-eval-"));
+  // The worktree must live on the repo's own filesystem: hard links (node_modules)
+  // cannot cross devices — $TMPDIR is tmpfs on this host, the repo is on NFS.
+  const baseRoot = mkdtempSync(join(dirname(REPO_ROOT), "opencode-agent-chat-eval-"));
   const wt = join(baseRoot, "baseline-wt");
   let worktreeAdded = false;
+  const evalDir = newEvalDir();
   try {
     const add = await runCommand(["git", "worktree", "add", "--detach", wt, EVAL_BASELINE_REF], {
       cwd: REPO_ROOT,
@@ -652,44 +723,57 @@ async function evalScenario(): Promise<void> {
       add.exitCode === 0,
       `git worktree add ${EVAL_BASELINE_REF} failed (exit ${add.exitCode}; log ${join(baseRoot, "worktree.log")})`,
     );
+    // Baseline-arm fix (the #88 defect A): the worktree has no node_modules, so the
+    // baseline plugin cannot load its dependencies and the arm runs dead. Hard-link
+    // the host's node_modules in — offline, deterministic, no copy cost.
+    const nm = await runCommand(["cp", "-al", join(REPO_ROOT, "node_modules"), join(wt, "node_modules")], {
+      cwd: REPO_ROOT,
+      env: {},
+      timeoutS: 120,
+      logPath: join(baseRoot, "node-modules.log"),
+    });
+    assert(
+      nm.exitCode === 0,
+      `hard-linking node_modules into the baseline worktree failed (exit ${nm.exitCode}; log ${join(
+        baseRoot,
+        "node-modules.log",
+      )}) — the baseline arm would run without the plugin's dependencies`,
+    );
     worktreeAdded = true;
-    const rates: Record<EvalArm, Record<EvalKey, EvalRate>> = {
-      baseline: { ask: zeroRate(), answer: zeroRate(), noise: zeroRate() },
-      new: { ask: zeroRate(), answer: zeroRate(), noise: zeroRate() },
-    };
+    const rates = zeroRates();
+    const judgeInputs: JudgeRunInput[] = [];
     for (const arm of ["baseline", "new"] as EvalArm[]) {
       const srcRoot = arm === "baseline" ? wt : REPO_ROOT;
       for (const sc of EVAL_SCENARIOS) {
         for (let i = 0; i < EVAL_RUNS; i++) {
-          let result = zeroCounts();
-          await withRoot(`agent-chat-eval-${arm}-${sc.key}-${i}-`, async (root) => {
-            result = await runEvalArm(root, srcRoot, sc.prompt);
-          });
-          const r = rates[arm][sc.key];
-          r.runs += 1;
-          if (result.questions >= 1) r.asked += 1;
-          if (result.answers >= 1) r.answered += 1;
-          if (result.questions + result.answers >= 1) r.noised += 1;
+          const { counts, outcome, root } = await runEvalRun(
+            evalDir,
+            `agent-chat-eval-${arm}-${sc.key}-${i}-`,
+            srcRoot,
+            sc.prompt,
+          );
+          recordRun(rates[arm][sc.key], outcome, counts);
+          judgeInputs.push({ run: `${arm}-${sc.key}-${i}`, scenario: sc.key, dir: root, harnessOutcome: outcome });
         }
       }
     }
-    const b = rates.baseline;
-    const n = rates.new;
-    console.log(
-      `eval (${EVAL_RUNS} runs/scenario) — ask: baseline=${b.ask.asked}/${b.ask.runs} new=${n.ask.asked}/${n.ask.runs} | answer: baseline=${b.answer.answered}/${b.answer.runs} new=${n.answer.answered}/${n.answer.runs} | noise: baseline=${b.noise.noised}/${b.noise.runs} new=${n.noise.noised}/${n.noise.runs}`,
-    );
-    assert(
-      n.ask.asked >= 1 && n.ask.asked >= b.ask.asked,
-      `ask not lifted: the new arm's child asked in ${n.ask.asked}/${n.ask.runs} runs when blocked on a peer-only fact (baseline ${b.ask.asked}/${b.ask.runs}); expected >= 1 and >= baseline`,
-    );
-    assert(
-      n.answer.answered >= 1 && n.answer.answered >= b.answer.answered,
-      `answer not lifted: the new arm's child answered in ${n.answer.answered}/${n.answer.runs} runs on the seeded question (baseline ${b.answer.answered}/${b.answer.runs}); expected >= 1 and >= baseline`,
-    );
-    assert(
-      n.noise.noised <= b.noise.noised,
-      `noise guard broken: the new arm's child posted in ${n.noise.noised}/${n.noise.runs} runs on the self-contained task vs ${b.noise.noised}/${b.noise.runs} baseline; the new text over-asks`,
-    );
+    console.log(`eval (${EVAL_RUNS} runs/scenario, artifacts: ${evalDir}) —`);
+    for (const sc of EVAL_SCENARIOS) {
+      console.log(`  ${sc.key.padEnd(9)} new ${rateCell("new", sc.key, rates).padEnd(34)} | baseline ${rateCell("baseline", sc.key, rates)}`);
+    }
+    // The advisory judge (#89/#90 lock): the harness outcome is passed as the
+    // authoritative input; judge errors never fail the eval — the hard gate below
+    // is the deterministic counts.
+    try {
+      const report = await runJudge(judgeInputs);
+      writeFileSync(join(evalDir, "judge-report.json"), JSON.stringify(report, null, 2));
+      console.log(judgeAggregateLine(report));
+    } catch (err) {
+      console.log(`judge unavailable: ${err instanceof Error ? err.message : String(err)} (advisory — the gate is the counts above)`);
+    }
+    const failures = gateFailures(rates);
+    assert(failures.length === 0, `eval RED:\n  - ${failures.join("\n  - ")}`);
+    pruneEvalDirs();
   } finally {
     if (worktreeAdded) {
       await runCommand(["git", "worktree", "remove", "--force", wt], {
