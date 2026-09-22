@@ -371,7 +371,7 @@ Detail: #17, `v2-plugin-packaging.md` §10.
 | npm name | `opencode-agent-chat` |
 | plugin id | `opencode-agent-chat` (must equal the install name; removal `-opencode-agent-chat`) |
 | viewer bin | `agent-chat` |
-| version | `0.5.0` (manual semver; `0.1.0` was the first release) |
+| version | `0.6.0` (manual semver; `0.1.0` was the first release) |
 | license | MIT |
 | SDK | `@opencode/plugin` allowed the `~2.0.8` range (floor `2.0.8`); the dev lock stays at the floor, and each release re-proves the top of the range (scratch-worktree bump → `bun test` + typecheck, recorded on the release ticket) |
 
@@ -388,7 +388,7 @@ physical `<dir>/server` or `<dir>/index` files and ignores `package.json` `expor
 repo ships root `server.ts` and `tui.ts` re-export shims for the repo-root target. npm installs
 are unaffected: a package target resolves through `exports["./server"]` → `src/plugin.ts` and
 `exports["./tui"]` → `src/tui.ts`. The
-published `files` list ships `src/`, `docs/chat-protocol.md`, `README.md` and `LICENSE`;
+published `files` list ships `src/`, `docs/chat-protocol.md`, `docs/task-design.md`, `README.md` and `LICENSE`;
 the root shims are deliberately not shipped, because a directory target pointed into a published
 tarball is not a supported install form. Release
 is manual — bump, tag `vX.Y.Z`, `npm publish`, GitHub release notes. The npm token is a
