@@ -52,6 +52,29 @@ Step 6: Reply with exactly one line and nothing else: QUESTION_ID=<N>
 
 const CONFIG_PROMPT = "reply with the single word ok";
 
+// Eval scenarios are NON-imperative: the agent under test (probe-child) gets a genuine
+// situation and must decide for itself whether to ask/answer (that is what the protocol
+// text's effect is measured on). The existing chat scenario scripts the behavior; the eval
+// does not. The measured posts are probe-child's question/answer posts (the parent
+// probe-main only posts the S2 setup question).
+const EVAL_ASK = `You are probe-main. The internal codename of this project's staging environment is "bluefin". Keep that value to yourself; do not put it into any instruction you give the subagent.
+Launch the subagent tool exactly once with agent "probe-child", description "label the config", and this prompt:
+"Add a 'stagingCodename' field to config.json set to the internal codename of the staging environment. When you are done, reply with exactly the value you set it to."
+Wait for the subagent to finish before doing anything else, then reply with exactly: MAIN-DONE`;
+
+const EVAL_ANSWER = `You are probe-main.
+First, call the chat_post tool exactly once with kind "question", to "probe-child", and body "What is the internal codename of the staging environment?".
+Then launch the subagent tool exactly once with agent "probe-child", description "acknowledge", and this prompt:
+"For context, the internal codename of the staging environment is bluefin. Acknowledge that you have this context by replying with exactly: ACK"
+Wait for the subagent to finish before doing anything else, then reply with exactly: MAIN-DONE`;
+
+const EVAL_NOISE = `You are probe-main.
+Launch the subagent tool exactly once with agent "probe-child", description "write a file", and this prompt:
+"Create hello.txt containing exactly the text: hi. When the file is written, reply with exactly: DONE"
+Wait for the subagent to finish before doing anything else, then reply with exactly: MAIN-DONE`;
+
+const EVAL_BASELINE_REF = "89df0a0"; // 0.4.1: the pre-0.5.0 protocol text + rendering
+
 class SmokeError extends Error {}
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -196,7 +219,7 @@ function mountEntry(root: string, chatsDir: string): unknown {
   return { package: join(root, "mount"), options: { chatDir: chatsDir, debug: true } };
 }
 
-function mountPlugin(root: string): string {
+function mountPluginAt(root: string, srcRoot: string): string {
   const mount = join(root, "mount");
   mkdirSync(mount, { recursive: true });
   writeFileSync(
@@ -207,11 +230,17 @@ function mountPlugin(root: string): string {
       2,
     )}\n`,
   );
+  // The plugin is loaded from source (bun runs the TS directly), so pointing the mount at a
+  // different source tree selects a different protocol text + rendering with no rebuild.
   writeFileSync(
     join(mount, "server.ts"),
-    `export { default } from ${JSON.stringify(pathToFileURL(join(REPO_ROOT, "src", "plugin.ts")).href)};\n`,
+    `export { default } from ${JSON.stringify(pathToFileURL(join(srcRoot, "src", "plugin.ts")).href)};\n`,
   );
   return mount;
+}
+
+function mountPlugin(root: string): string {
+  return mountPluginAt(root, REPO_ROOT);
 }
 
 function scaffold(root: string, projectPlugins: unknown[], globalPlugins?: unknown[]): string {
@@ -552,9 +581,119 @@ async function configScenario(): Promise<void> {
   });
 }
 
-type Scenario = "chat" | "config";
+interface EvalCounts {
+  questions: number;
+  answers: number;
+}
 
-const SCENARIOS: Scenario[] = ["chat", "config"];
+const zeroCounts = (): EvalCounts => ({ questions: 0, answers: 0 });
+
+// Run one eval scenario for one arm: scaffold, mount the arm's source tree (current main for
+// "new", the 0.4.1 worktree for "baseline"), run the non-imperative prompt, and count the
+// child's question/answer posts from the chat DB (the only signal the protocol text moves).
+async function runEvalArm(root: string, srcRoot: string, prompt: string): Promise<EvalCounts> {
+  const chatsDir = join(root, "chats");
+  const project = scaffold(root, [mountEntry(root, chatsDir)]);
+  mountPluginAt(root, srcRoot);
+  await seedIsolatedState(root, project);
+  await runCommand(opencodeRunArgs(prompt), {
+    cwd: project,
+    env: xdgEnv(root),
+    timeoutS: CHAT_TIMEOUT_S,
+    logPath: join(root, "eval-run.log"),
+  });
+  const dbs = existsSync(chatsDir) ? readdirSync(chatsDir).filter((name) => name.endsWith(".db")) : [];
+  if (dbs.length === 0) return zeroCounts();
+  const dbFile = dbs[0];
+  assert(dbFile !== undefined, `no chat DB under ${chatsDir}`);
+  const db = new Database(join(chatsDir, dbFile), { readonly: true });
+  try {
+    const rows = db
+      .query("select kind, sender_name from messages where sender_type = 'agent'")
+      .all() as { kind: string; sender_name: string }[];
+    const childPosts = rows.filter((r) => /^probe-child-[a-z0-9]{8}$/.test(r.sender_name));
+    return {
+      questions: childPosts.filter((r) => r.kind === "question").length,
+      answers: childPosts.filter((r) => r.kind === "answer").length,
+    };
+  } finally {
+    db.close();
+  }
+}
+
+const EVAL_SCENARIOS = [
+  { key: "ask", prompt: EVAL_ASK },
+  { key: "answer", prompt: EVAL_ANSWER },
+  { key: "noise", prompt: EVAL_NOISE },
+] as const;
+
+type EvalKey = (typeof EVAL_SCENARIOS)[number]["key"];
+type EvalArm = "baseline" | "new";
+
+async function evalScenario(): Promise<void> {
+  const baseRoot = mkdtempSync(join(tmpdir(), "agent-chat-eval-"));
+  const wt = join(baseRoot, "baseline-wt");
+  let worktreeAdded = false;
+  try {
+    const add = await runCommand(["git", "worktree", "add", "--detach", wt, EVAL_BASELINE_REF], {
+      cwd: REPO_ROOT,
+      env: {},
+      timeoutS: 60,
+      logPath: join(baseRoot, "worktree.log"),
+    });
+    assert(
+      add.exitCode === 0,
+      `git worktree add ${EVAL_BASELINE_REF} failed (exit ${add.exitCode}; log ${join(baseRoot, "worktree.log")})`,
+    );
+    worktreeAdded = true;
+    const counts: Record<EvalArm, Record<EvalKey, EvalCounts>> = {
+      baseline: { ask: zeroCounts(), answer: zeroCounts(), noise: zeroCounts() },
+      new: { ask: zeroCounts(), answer: zeroCounts(), noise: zeroCounts() },
+    };
+    for (const arm of ["baseline", "new"] as EvalArm[]) {
+      const srcRoot = arm === "baseline" ? wt : REPO_ROOT;
+      for (const sc of EVAL_SCENARIOS) {
+        let result = zeroCounts();
+        await withRoot(`agent-chat-eval-${arm}-${sc.key}-`, async (root) => {
+          result = await runEvalArm(root, srcRoot, sc.prompt);
+        });
+        counts[arm][sc.key] = result;
+      }
+    }
+    const total = (c: EvalCounts) => c.questions + c.answers;
+    const b = counts.baseline;
+    const n = counts.new;
+    console.log(
+      `eval — ask: baseline=${b.ask.questions} new=${n.ask.questions} | answer: baseline=${b.answer.answers} new=${n.answer.answers} | noise: baseline=${total(b.noise)} new=${total(n.noise)}`,
+    );
+    assert(
+      n.ask.questions >= 1,
+      `ask not lifted: the new arm's child posted ${n.ask.questions} question(s) when blocked on a peer-only fact (baseline ${b.ask.questions}); expected >= 1`,
+    );
+    assert(
+      n.answer.answers >= 1,
+      `answer not lifted: the new arm's child posted ${n.answer.answers} answer(s) to the seeded question (baseline ${b.answer.answers}); expected >= 1`,
+    );
+    assert(
+      total(n.noise) <= total(b.noise),
+      `noise guard broken: the new arm's child posted ${total(n.noise)} question/answer(s) on the self-contained task vs ${total(b.noise)} baseline; the new text over-asks`,
+    );
+  } finally {
+    if (worktreeAdded) {
+      await runCommand(["git", "worktree", "remove", "--force", wt], {
+        cwd: REPO_ROOT,
+        env: {},
+        timeoutS: 30,
+        logPath: join(baseRoot, "worktree-rm.log"),
+      }).catch(() => {});
+    }
+    rmSync(baseRoot, { recursive: true, force: true });
+  }
+}
+
+type Scenario = "chat" | "config" | "eval";
+
+const SCENARIOS: Scenario[] = ["chat", "config", "eval"];
 
 function selectedScenarios(argv: string[]): Scenario[] {
   let requested = "all";
@@ -565,8 +704,8 @@ function selectedScenarios(argv: string[]): Scenario[] {
     }
   }
   if (requested === "all") return SCENARIOS;
-  if (requested === "chat" || requested === "config") return [requested];
-  console.error(`usage: bun run smoke [--scenario chat|config|all]`);
+  if (requested === "chat" || requested === "config" || requested === "eval") return [requested];
+  console.error(`usage: bun run smoke [--scenario chat|config|eval|all]`);
   process.exit(2);
 }
 
@@ -578,7 +717,8 @@ for (const scenario of scenarios) {
       throw new SmokeError('opencode is not on PATH; run the smoke inside "nix develop"');
     }
     if (scenario === "chat") await chatScenario();
-    else await configScenario();
+    else if (scenario === "config") await configScenario();
+    else await evalScenario();
     console.log(`PASS ${scenario}`);
   } catch (err) {
     failed = true;
