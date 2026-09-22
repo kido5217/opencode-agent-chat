@@ -30,9 +30,9 @@ describe("viewer rendering", () => {
   });
 
   test("a normal message renders unchanged", () => {
-    expect(renderMessage(message({ body: "hello" }), 1)).toMatch(/^\d{2}:\d{2}:\d{2} \[1\] ● main hello$/);
+    expect(renderMessage(message({ body: "hello" }), 1)).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \[1\] ● main hello$/);
     expect(renderMessage(message({ body: "hello", to_name: "builder" }), 1)).toMatch(
-      /^\d{2}:\d{2}:\d{2} \[1\] ● main → builder hello$/,
+      /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \[1\] ● main → builder hello$/,
     );
   });
 
