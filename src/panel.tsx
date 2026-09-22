@@ -22,6 +22,9 @@ export function panelRender(content: () => PanelContent | null) {
     return (
       <box style={{ width: "100%", height: "100%" }} flexDirection="column">
         <text>{`agent-chat transcript for ${c.root} · ${c.total} messages`}</text>
+        <box style={{ height: 1 }}>
+          <text>{`esc to close`}</text>
+        </box>
         <scrollbox style={{ flexGrow: 1 }}>
           <text>{c.text}</text>
         </scrollbox>

@@ -1,10 +1,12 @@
 import { Plugin } from "@opencode/plugin/tui";
 import { createSignal } from "solid-js";
+import { readChatDirMarker } from "./core/marker.ts";
 import { parseOptions } from "./core/options.ts";
 import { panelTranscriptFor, tuiTranscriptFor } from "./core/transcript.ts";
 import { panelRender, PANEL_NAME, type PanelContent } from "./panel.tsx";
 
 const TUI_COMMAND_ID = "agent-chat.view";
+const TUI_CLOSE_ID = "agent-chat.close";
 
 export default Plugin.define({
   id: "opencode-agent-chat",
@@ -40,10 +42,13 @@ export default Plugin.define({
                     return;
                   }
                   const root = context.data.session.root(route.sessionID);
+                  // The host (v2.0.12) passes no options to the TUI context, so prefer the
+                  // chat dir the server-side plugin published via the marker.
+                  const chatDir = readChatDirMarker() ?? options.chatDir;
                   if (input?.trim() !== "full") {
                     let windowed;
                     try {
-                      windowed = tuiTranscriptFor(options.chatDir, root);
+                      windowed = tuiTranscriptFor(chatDir, root);
                     } catch (err) {
                       const reason = err instanceof Error ? err.message : String(err);
                       context.ui.toast.show({ message: `agent-chat: ${reason}`, variant: "error" });
@@ -64,7 +69,7 @@ export default Plugin.define({
                   }
                   let full;
                   try {
-                    full = panelTranscriptFor(options.chatDir, root);
+                    full = panelTranscriptFor(chatDir, root);
                   } catch (err) {
                     const reason = err instanceof Error ? err.message : String(err);
                     context.ui.toast.show({ message: `agent-chat: ${reason}`, variant: "error" });
@@ -79,6 +84,19 @@ export default Plugin.define({
                   if (!opened) {
                     context.ui.toast.show({ message: "agent-chat: could not open the panel", variant: "error" });
                   }
+                },
+              },
+              {
+                // The host provides no close affordance for the session.panel, so the
+                // plugin binds Escape itself. Returning false while nothing of ours is
+                // open lets the host handle Escape exactly as before.
+                id: TUI_CLOSE_ID,
+                title: "Close the agent chat transcript panel",
+                bind: "escape",
+                run: () => {
+                  if (panelContent() === null) return false;
+                  setPanelContent(null);
+                  context.ui.panel.close();
                 },
               },
             ],
