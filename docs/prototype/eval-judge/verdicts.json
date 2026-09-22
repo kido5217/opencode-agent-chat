@@ -1,0 +1,267 @@
+{
+  "generated_at": "2026-09-22T16:58:13.181Z",
+  "judge_model": "Qwen3.8-27B",
+  "endpoint": "https://ai.kido.ws/v1/chat/completions",
+  "mirror_root": "/tmp/opencode/eval88-evidence/mirror/tmp/nix-shell.YTy8FX",
+  "note": "advisory only — deterministic DB counts remain the eval's hard gate (map #87 / ticket #89)",
+  "runs": [
+    {
+      "run": "answer-0",
+      "dir": "agent-chat-eval-new-answer-0-vdzRpj",
+      "source": "judge",
+      "verdict": {
+        "outcome_class": "completed",
+        "child_joined": true,
+        "gradable": true,
+        "ungradable_reason": null,
+        "expected_behavior_met": true,
+        "post_scores": [
+          {
+            "post_id": 4,
+            "axis": "answer_quality",
+            "score": 2,
+            "note": "Child posted kind=answer in reply to post 2 and directly settled the question with the correct codename, bluefin."
+          }
+        ],
+        "noise": null,
+        "rationale": "The child session joined, posted a direct answer to main's open question, and completed successfully. The answer fully settles the question."
+      },
+      "raw": "{\n  \"outcome_class\": \"completed\",\n  \"child_joined\": true,\n  \"gradable\": true,\n  \"ungradable_reason\": null,\n  \"expected_behavior_met\": true,\n  \"post_scores\": [\n    {\n      \"post_id\": 4,\n      \"axis\": \"answer_quality\",\n      \"score\": 2,\n      \"note\": \"Child posted kind=answer in reply to post 2 and directly settled the question with the correct codename, bluefin.\"\n    }\n  ],\n  \"noise\": null,\n  \"rationale\": \"The child session joined, posted a direct answer to main's open question, and completed successfully. The answer fully settles the question.\"\n}"
+    },
+    {
+      "run": "answer-1",
+      "dir": "agent-chat-eval-new-answer-1-0zUzTb",
+      "source": "judge",
+      "verdict": {
+        "outcome_class": "completed",
+        "child_joined": true,
+        "gradable": true,
+        "ungradable_reason": null,
+        "expected_behavior_met": true,
+        "post_scores": [
+          {
+            "post_id": 4,
+            "axis": "answer_quality",
+            "score": 2,
+            "note": "Child posted kind=answer in_reply_to=2 and directly settled the question with the correct codename 'bluefin'."
+          }
+        ],
+        "noise": null,
+        "rationale": "The child session completed successfully, joined the chat, and posted a direct answer to main's open question with the correct value and correct reply target."
+      },
+      "raw": "{\n  \"outcome_class\": \"completed\",\n  \"child_joined\": true,\n  \"gradable\": true,\n  \"ungradable_reason\": null,\n  \"expected_behavior_met\": true,\n  \"post_scores\": [\n    {\n      \"post_id\": 4,\n      \"axis\": \"answer_quality\",\n      \"score\": 2,\n      \"note\": \"Child posted kind=answer in_reply_to=2 and directly settled the question with the correct codename 'bluefin'.\"\n    }\n  ],\n  \"noise\": null,\n  \"rationale\": \"The child session completed successfully, joined the chat, and posted a direct answer to main's open question with the correct value and correct reply target.\"\n}"
+    },
+    {
+      "run": "answer-2",
+      "dir": "agent-chat-eval-new-answer-2-d6WqIF",
+      "source": "judge",
+      "verdict": {
+        "outcome_class": "crashed",
+        "child_joined": true,
+        "gradable": false,
+        "ungradable_reason": "Child session ends with a trailing empty reasoning row with no content, indicating abnormal termination; main's subagent tool is still running and no completion outcome is recorded.",
+        "expected_behavior_met": null,
+        "post_scores": [],
+        "noise": null,
+        "rationale": "The child joined and posted an answer settling the question, but the run did not reach a completed state: the child session's final row is an empty reasoning row and the parent subagent call remains running. Per rules, a crashed run is not gradable."
+      },
+      "raw": "{\"outcome_class\":\"crashed\",\"child_joined\":true,\"gradable\":false,\"ungradable_reason\":\"Child session ends with a trailing empty reasoning row with no content, indicating abnormal termination; main's subagent tool is still running and no completion outcome is recorded.\",\"expected_behavior_met\":null,\"post_scores\":[],\"noise\":null,\"rationale\":\"The child joined and posted an answer settling the question, but the run did not reach a completed state: the child session's final row is an empty reasoning row and the parent subagent call remains running. Per rules, a crashed run is not gradable.\"}"
+    },
+    {
+      "run": "answer-3",
+      "dir": "agent-chat-eval-new-answer-3-y3ADSB",
+      "source": "judge",
+      "verdict": {
+        "outcome_class": "indeterminate",
+        "child_joined": false,
+        "gradable": false,
+        "ungradable_reason": "Artifacts end while main's subagent launch is still streaming and no child session or child chat post exists; there is no completion, wall-clock cap, or positive crash evidence.",
+        "expected_behavior_met": null,
+        "post_scores": [],
+        "noise": null,
+        "rationale": "The chat log contains only main's question. The main session ends at t+2s with an in-progress subagent tool call and no child join. Because the run appears to have been captured mid-execution without positive evidence of a crash or cap, it is indeterminate and not gradable."
+      },
+      "raw": "{\n  \"outcome_class\": \"indeterminate\",\n  \"child_joined\": false,\n  \"gradable\": false,\n  \"ungradable_reason\": \"Artifacts end while main's subagent launch is still streaming and no child session or child chat post exists; there is no completion, wall-clock cap, or positive crash evidence.\",\n  \"expected_behavior_met\": null,\n  \"post_scores\": [],\n  \"noise\": null,\n  \"rationale\": \"The chat log contains only main's question. The main session ends at t+2s with an in-progress subagent tool call and no child join. Because the run appears to have been captured mid-execution without positive evidence of a crash or cap, it is indeterminate and not gradable.\"\n}"
+    },
+    {
+      "run": "answer-4",
+      "dir": "agent-chat-eval-new-answer-4-1WCMcZ",
+      "source": "judge",
+      "verdict": {
+        "outcome_class": "completed",
+        "child_joined": true,
+        "gradable": true,
+        "ungradable_reason": null,
+        "expected_behavior_met": true,
+        "post_scores": [
+          {
+            "post_id": 4,
+            "axis": "answer_quality",
+            "score": 2,
+            "note": "The child posted kind=answer in reply to post 2 and directly settled the question with the correct codename, bluefin."
+          }
+        ],
+        "noise": null,
+        "rationale": "The child joined, recognized main's open question, and posted a complete answer referencing the question's post id. No wall-clock cap or crash evidence is present, and the measured child activity clearly finished."
+      },
+      "raw": "{\n  \"outcome_class\": \"completed\",\n  \"child_joined\": true,\n  \"gradable\": true,\n  \"ungradable_reason\": null,\n  \"expected_behavior_met\": true,\n  \"post_scores\": [\n    {\n      \"post_id\": 4,\n      \"axis\": \"answer_quality\",\n      \"score\": 2,\n      \"note\": \"The child posted kind=answer in reply to post 2 and directly settled the question with the correct codename, bluefin.\"\n    }\n  ],\n  \"noise\": null,\n  \"rationale\": \"The child joined, recognized main's open question, and posted a complete answer referencing the question's post id. No wall-clock cap or crash evidence is present, and the measured child activity clearly finished.\"\n}"
+    },
+    {
+      "run": "ask-0",
+      "dir": "agent-chat-eval-new-ask-0-Y3pNV1",
+      "source": "local",
+      "verdict": {
+        "outcome_class": "artifacts_missing",
+        "child_joined": false,
+        "gradable": false,
+        "ungradable_reason": "run left no usable artifacts (neither chats db nor opencode db present in the mirror)",
+        "expected_behavior_met": null,
+        "post_scores": [],
+        "noise": null,
+        "rationale": "no artifacts to classify."
+      }
+    },
+    {
+      "run": "ask-1",
+      "dir": "agent-chat-eval-new-ask-1-4HjzNW",
+      "source": "local",
+      "verdict": {
+        "outcome_class": "artifacts_missing",
+        "child_joined": false,
+        "gradable": false,
+        "ungradable_reason": "run left no usable artifacts (neither chats db nor opencode db present in the mirror)",
+        "expected_behavior_met": null,
+        "post_scores": [],
+        "noise": null,
+        "rationale": "no artifacts to classify."
+      }
+    },
+    {
+      "run": "ask-2",
+      "dir": "agent-chat-eval-new-ask-2-8WLeaY",
+      "source": "local",
+      "verdict": {
+        "outcome_class": "artifacts_missing",
+        "child_joined": false,
+        "gradable": false,
+        "ungradable_reason": "run left no usable artifacts (neither chats db nor opencode db present in the mirror)",
+        "expected_behavior_met": null,
+        "post_scores": [],
+        "noise": null,
+        "rationale": "no artifacts to classify."
+      }
+    },
+    {
+      "run": "ask-3",
+      "dir": "agent-chat-eval-new-ask-3-R3Xanu",
+      "source": "judge",
+      "verdict": {
+        "outcome_class": "indeterminate",
+        "child_joined": true,
+        "gradable": false,
+        "ungradable_reason": "Artifacts end mid-execution with no completion, no wall-clock cap evidence, and no positive crash evidence.",
+        "expected_behavior_met": null,
+        "post_scores": [],
+        "noise": null,
+        "rationale": "The child joined and produced reasoning/tool activity, but the run snapshot ends with a running tool call and no completed outcome. Session spans are only 2s and 7s, so there is no evidence of the ~600s harness cap. There is also no positive evidence of abnormal termination. Therefore the run is indeterminate and not gradable."
+      },
+      "raw": "{\n  \"outcome_class\": \"indeterminate\",\n  \"child_joined\": true,\n  \"gradable\": false,\n  \"ungradable_reason\": \"Artifacts end mid-execution with no completion, no wall-clock cap evidence, and no positive crash evidence.\",\n  \"expected_behavior_met\": null,\n  \"post_scores\": [],\n  \"noise\": null,\n  \"rationale\": \"The child joined and produced reasoning/tool activity, but the run snapshot ends with a running tool call and no completed outcome. Session spans are only 2s and 7s, so there is no evidence of the ~600s harness cap. There is also no positive evidence of abnormal termination. Therefore the run is indeterminate and not gradable.\"\n}"
+    },
+    {
+      "run": "ask-4",
+      "dir": "agent-chat-eval-new-ask-4-hOSvVI",
+      "source": "judge",
+      "verdict": {
+        "outcome_class": "indeterminate",
+        "child_joined": true,
+        "gradable": false,
+        "ungradable_reason": "The artifacts end mid-execution with the child still running a shell tool and no completion, success outcome, or wall-clock cap evidence; the final behavior cannot be determined.",
+        "expected_behavior_met": null,
+        "post_scores": [],
+        "noise": null,
+        "rationale": "The child joined and performed filesystem exploration, but the session snapshot ends with a running tool call at t+127s. There is no completed state, no cap evidence near 600s, and no positive crash evidence, so the run is indeterminate and not gradable."
+      },
+      "raw": "{\n  \"outcome_class\": \"indeterminate\",\n  \"child_joined\": true,\n  \"gradable\": false,\n  \"ungradable_reason\": \"The artifacts end mid-execution with the child still running a shell tool and no completion, success outcome, or wall-clock cap evidence; the final behavior cannot be determined.\",\n  \"expected_behavior_met\": null,\n  \"post_scores\": [],\n  \"noise\": null,\n  \"rationale\": \"The child joined and performed filesystem exploration, but the session snapshot ends with a running tool call at t+127s. There is no completed state, no cap evidence near 600s, and no positive crash evidence, so the run is indeterminate and not gradable.\"\n}"
+    },
+    {
+      "run": "noise-0",
+      "dir": "agent-chat-eval-new-noise-0-KuJoC3",
+      "source": "judge",
+      "verdict": {
+        "outcome_class": "indeterminate",
+        "child_joined": true,
+        "gradable": false,
+        "ungradable_reason": "The artifacts end with the main session's subagent tool still running and no completion/success outcome recorded; this is consistent with a mid-execution snapshot rather than a completed, killed, or crashed run.",
+        "expected_behavior_met": null,
+        "post_scores": [],
+        "noise": null,
+        "rationale": "Child joined and completed a write tool call, but the main session's subagent invocation remained running and no normal end state is evidenced. Wall-clock spans are 1s, so the cap was not reached, and there is no positive crash evidence. Therefore the run is indeterminate and not gradable."
+      },
+      "raw": "{\n  \"outcome_class\": \"indeterminate\",\n  \"child_joined\": true,\n  \"gradable\": false,\n  \"ungradable_reason\": \"The artifacts end with the main session's subagent tool still running and no completion/success outcome recorded; this is consistent with a mid-execution snapshot rather than a completed, killed, or crashed run.\",\n  \"expected_behavior_met\": null,\n  \"post_scores\": [],\n  \"noise\": null,\n  \"rationale\": \"Child joined and completed a write tool call, but the main session's subagent invocation remained running and no normal end state is evidenced. Wall-clock spans are 1s, so the cap was not reached, and there is no positive crash evidence. Therefore the run is indeterminate and not gradable.\"\n}"
+    },
+    {
+      "run": "noise-1",
+      "dir": "agent-chat-eval-new-noise-1-o1Zv3G",
+      "source": "judge",
+      "verdict": {
+        "outcome_class": "indeterminate",
+        "child_joined": true,
+        "gradable": false,
+        "ungradable_reason": "Artifacts end mid-execution: main's subagent tool is still running and no completion, cap, or crash evidence is present.",
+        "expected_behavior_met": null,
+        "post_scores": [],
+        "noise": null,
+        "rationale": "The child joined and performed a completed write tool call, but the run did not reach a recorded normal end state and there is no wall-clock cap or positive crash evidence, so it is not gradable."
+      },
+      "raw": "{\"outcome_class\":\"indeterminate\",\"child_joined\":true,\"gradable\":false,\"ungradable_reason\":\"Artifacts end mid-execution: main's subagent tool is still running and no completion, cap, or crash evidence is present.\",\"expected_behavior_met\":null,\"post_scores\":[],\"noise\":null,\"rationale\":\"The child joined and performed a completed write tool call, but the run did not reach a recorded normal end state and there is no wall-clock cap or positive crash evidence, so it is not gradable.\"}"
+    },
+    {
+      "run": "noise-2",
+      "dir": "agent-chat-eval-new-noise-2-08kWp2",
+      "source": "judge",
+      "verdict": {
+        "outcome_class": "indeterminate",
+        "child_joined": true,
+        "gradable": false,
+        "ungradable_reason": "Artifacts end mid-execution: the main session's subagent tool is still running and no completion outcome is recorded, with no positive evidence of a crash or wall-clock cap.",
+        "expected_behavior_met": null,
+        "post_scores": [],
+        "noise": null,
+        "rationale": "The child joined and performed the file write, but the run did not reach a normal completed state. The main session still shows the subagent tool running, and there is no cap evidence or positive crash evidence, so the outcome is indeterminate and not gradable."
+      },
+      "raw": "{\n  \"outcome_class\": \"indeterminate\",\n  \"child_joined\": true,\n  \"gradable\": false,\n  \"ungradable_reason\": \"Artifacts end mid-execution: the main session's subagent tool is still running and no completion outcome is recorded, with no positive evidence of a crash or wall-clock cap.\",\n  \"expected_behavior_met\": null,\n  \"post_scores\": [],\n  \"noise\": null,\n  \"rationale\": \"The child joined and performed the file write, but the run did not reach a normal completed state. The main session still shows the subagent tool running, and there is no cap evidence or positive crash evidence, so the outcome is indeterminate and not gradable.\"\n}"
+    },
+    {
+      "run": "noise-3",
+      "dir": "agent-chat-eval-new-noise-3-eeneJe",
+      "source": "judge",
+      "verdict": {
+        "outcome_class": "indeterminate",
+        "child_joined": true,
+        "gradable": false,
+        "ungradable_reason": "Artifacts end mid-execution: the child session started and completed a write tool, but the main session's subagent tool is still running and no completion/success outcome is recorded; there is no wall-clock cap or positive crash evidence.",
+        "expected_behavior_met": null,
+        "post_scores": [],
+        "noise": null,
+        "rationale": "The child joined and performed the self-contained file-writing task, but the run did not reach a recorded completed state. The main session still shows the subagent tool running, and the child session has no final completion marker. Because the snapshot appears to have caught the run mid-execution without positive crash or cap evidence, the outcome is indeterminate and the run is not gradable."
+      },
+      "raw": "{\n  \"outcome_class\": \"indeterminate\",\n  \"child_joined\": true,\n  \"gradable\": false,\n  \"ungradable_reason\": \"Artifacts end mid-execution: the child session started and completed a write tool, but the main session's subagent tool is still running and no completion/success outcome is recorded; there is no wall-clock cap or positive crash evidence.\",\n  \"expected_behavior_met\": null,\n  \"post_scores\": [],\n  \"noise\": null,\n  \"rationale\": \"The child joined and performed the self-contained file-writing task, but the run did not reach a recorded completed state. The main session still shows the subagent tool running, and the child session has no final completion marker. Because the snapshot appears to have caught the run mid-execution without positive crash or cap evidence, the outcome is indeterminate and the run is not gradable.\"\n}"
+    },
+    {
+      "run": "noise-4",
+      "dir": "agent-chat-eval-new-noise-4-O9mVpN",
+      "source": "judge",
+      "verdict": {
+        "outcome_class": "crashed",
+        "child_joined": false,
+        "gradable": false,
+        "ungradable_reason": "Child never started: no child session and no child join in chat log, while main's turn is incomplete and ends with an empty trailing reasoning row.",
+        "expected_behavior_met": null,
+        "post_scores": [],
+        "noise": null,
+        "rationale": "The artifacts show only a main session with an incomplete assistant turn and no probe-child session or chat participation. This is positive evidence of abnormal termination before the child could act, so the run is not gradable."
+      },
+      "raw": "{\n  \"outcome_class\": \"crashed\",\n  \"child_joined\": false,\n  \"gradable\": false,\n  \"ungradable_reason\": \"Child never started: no child session and no child join in chat log, while main's turn is incomplete and ends with an empty trailing reasoning row.\",\n  \"expected_behavior_met\": null,\n  \"post_scores\": [],\n  \"noise\": null,\n  \"rationale\": \"The artifacts show only a main session with an incomplete assistant turn and no probe-child session or chat participation. This is positive evidence of abnormal termination before the child could act, so the run is not gradable.\"\n}"
+    }
+  ]
+}
