@@ -102,7 +102,10 @@ Wait for the subagent to finish before doing anything else, then reply with exac
 
 // Rolling baseline (#91 lock): after each release, point this at the new release
 // tag so every text change measures its marginal delta against the shipped text.
-const EVAL_BASELINE_REF = "89df0a0"; // 0.4.1: the pre-0.5.0 protocol text + rendering
+// Rolling baseline (#91): each text change measures its marginal delta against the
+// last release. This ref rolls at release — the 0.4.1 comparison was the one-shot
+// historical fact recorded in the v0.6.0 release notes.
+const EVAL_BASELINE_REF = "v0.6.0";
 const EVAL_RUNS = 5; // model runs per scenario per arm; the behavior is stochastic, so we measure a rate
 const EVAL_ARTIFACTS_KEEP = 3; // retained eval dirs; pruned to the last 3 (the #90 retention lock)
 
