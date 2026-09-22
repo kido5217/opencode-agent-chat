@@ -355,7 +355,8 @@ describe("handle.nextDelivery", () => {
     const id = postedId(handle.post({ body: "how?", kind: "question", to: "main" })); // #2
     const first = handle.nextDelivery()!;
     expect(first.text).toContain(`? [${id}] main · question → main: how?`);
-    expect(first.text).toContain(`Open questions: #${id} (main)`);
+    expect(first.text).toContain(`Open questions (1):`);
+    expect(first.text).toContain(`[${id}] main → you · 0m — how?`);
     handle.post({ body: "because", kind: "answer", in_reply_to: id }); // #3
     const second = handle.nextDelivery()!;
     expect(second.text).toContain("Open questions: none");

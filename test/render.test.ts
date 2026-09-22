@@ -120,10 +120,65 @@ describe("renderMessages", () => {
 });
 
 describe("renderOpenQuestions", () => {
-  test("lists ids and senders, or none", () => {
-    expect(renderOpenQuestions([])).toBe("Open questions: none");
-    expect(renderOpenQuestions([message({ id: 12 }), message({ id: 14, sender_name: "main" })])).toBe(
-      "Open questions: #12 (explore), #14 (main)",
+  const now = 1 + 4 * 60_000; // 4 minutes after the fixture's created_at (1)
+
+  test("says none when there are no open questions", () => {
+    expect(renderOpenQuestions([], "explore", now)).toBe("Open questions: none");
+  });
+
+  test("shows id, asker, addressee, age, and body excerpt", () => {
+    expect(renderOpenQuestions([message({ id: 12, to_name: "explore" })], "explore", now)).toBe(
+      "Open questions (1):\n[12] explore → you · 4m — why?",
+    );
+  });
+
+  test("a broadcast question is addressed to all", () => {
+    expect(renderOpenQuestions([message({ id: 12, to_name: null })], "explore", now)).toBe(
+      "Open questions (1):\n[12] explore → all · 4m — why?",
+    );
+  });
+
+  test("a question to someone else names them", () => {
+    expect(renderOpenQuestions([message({ id: 12, to_name: "plan" })], "explore", now)).toBe(
+      "Open questions (1):\n[12] explore → plan · 4m — why?",
+    );
+  });
+
+  test("marks a question stale after 30 minutes", () => {
+    expect(renderOpenQuestions([message({ id: 12, to_name: "explore" })], "explore", 1 + 35 * 60_000)).toBe(
+      "Open questions (1):\n[12] explore → you · 35m (stale) — why?",
+    );
+  });
+
+  test("orders addressed-to-you first, then oldest first", () => {
+    const order = renderOpenQuestions(
+      [
+        message({ id: 1, to_name: "other", created_at: 1 }),
+        message({ id: 2, to_name: "explore", created_at: 10 }),
+        message({ id: 3, to_name: "other", created_at: 5 }),
+        message({ id: 4, to_name: "explore", created_at: 8 }),
+      ],
+      "explore",
+      now,
+    )
+      .split("\n")
+      .slice(1)
+      .map((l) => l.match(/^\[(\d+)\]/)?.[1]);
+    expect(order).toEqual(["4", "2", "1", "3"]);
+  });
+
+  test("caps at five lines and notes the rest", () => {
+    const six = Array.from({ length: 6 }, (_, i) => message({ id: i + 1, to_name: null, created_at: 1 }));
+    const lines = renderOpenQuestions(six, "explore", now).split("\n");
+    expect(lines[0]).toBe("Open questions (6):");
+    expect(lines.slice(1, 6).map((l) => l.match(/^\[(\d+)\]/)?.[1])).toEqual(["1", "2", "3", "4", "5"]);
+    expect(lines[6]).toBe("+1 more open questions");
+  });
+
+  test("excerpts the body to about 80 characters", () => {
+    const body = "x".repeat(200);
+    expect(renderOpenQuestions([message({ id: 12, to_name: "explore", body })], "explore", now)).toBe(
+      `Open questions (1):\n[12] explore → you · 4m — ${"x".repeat(79)}…`,
     );
   });
 });

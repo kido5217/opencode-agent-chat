@@ -24,14 +24,36 @@ export function renderMessages(messages: Message[], maxBodyChars = 200): string 
 }
 
 export const MAX_OPEN_QUESTION_LINES = 5;
+export const OPEN_QUESTION_STALE_AFTER_MS = 30 * 60 * 1000;
 
-export function renderOpenQuestions(questions: Message[]): string {
+function compactAge(ms: number): string {
+  const min = Math.floor(ms / 60_000);
+  if (min < 60) return `${min}m`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
+export function renderOpenQuestions(questions: Message[], readerName: string, now: number): string {
   if (questions.length === 0) return "Open questions: none";
-  const shown = questions.slice(0, MAX_OPEN_QUESTION_LINES);
-  const listed = shown.map((q) => `#${q.id} (${sanitize(q.sender_name)})`).join(", ");
+  const addressed = (q: Message) => q.to_name !== null && q.to_name === readerName;
+  const sorted = [...questions].sort((a, b) => {
+    const rankA = addressed(a) ? 0 : 1;
+    const rankB = addressed(b) ? 0 : 1;
+    if (rankA !== rankB) return rankA - rankB;
+    if (a.created_at !== b.created_at) return a.created_at - b.created_at;
+    return a.id - b.id;
+  });
+  const shown = sorted.slice(0, MAX_OPEN_QUESTION_LINES);
+  const lines = shown.map((q) => {
+    const addressee = q.to_name === null ? "all" : q.to_name === readerName ? "you" : sanitize(q.to_name);
+    const ageMs = now - q.created_at;
+    const stale = ageMs >= OPEN_QUESTION_STALE_AFTER_MS ? " (stale)" : "";
+    return `[${q.id}] ${sanitize(q.sender_name)} → ${addressee} · ${compactAge(ageMs)}${stale} — ${excerpt(q.body, 80)}`;
+  });
   const hidden = questions.length - shown.length;
-  const tail = hidden > 0 ? `, +${hidden} more open questions` : "";
-  return `Open questions: ${listed}${tail}`;
+  const tail = hidden > 0 ? `\n+${hidden} more open questions` : "";
+  return `Open questions (${questions.length}):\n${lines.join("\n")}${tail}`;
 }
 
 export function renderRoster(participants: Participant[]): string {
