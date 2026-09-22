@@ -1,7 +1,13 @@
 import type { Database } from "bun:sqlite";
 import { isKind, type Kind, type Message } from "./types.ts";
 
-export type ChatErrorCode = "body_too_long" | "unknown_kind" | "unknown_reply" | "too_many_posts" | "duplicate_post";
+export type ChatErrorCode =
+  | "body_too_long"
+  | "to_too_long"
+  | "unknown_kind"
+  | "unknown_reply"
+  | "too_many_posts"
+  | "duplicate_post";
 
 export class ChatError extends Error {
   code: ChatErrorCode;
