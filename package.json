@@ -5,14 +5,20 @@
   "type": "module",
   "license": "MIT",
   "bin": {
-    "agent-chat": "./src/cli.ts"
+    "agent-chat": "src/cli.ts"
   },
   "exports": {
     "./server": "./src/plugin.ts",
     "./tui": "./src/tui.ts",
     ".": "./src/plugin.ts"
   },
-  "files": ["src", "docs/chat-protocol.md", "docs/task-design.md", "README.md", "LICENSE"],
+  "files": [
+    "src",
+    "docs/chat-protocol.md",
+    "docs/task-design.md",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
