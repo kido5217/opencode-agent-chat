@@ -8,6 +8,8 @@
     "skipLibCheck": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "@opentui/solid",
     "types": ["bun"]
   },
   "include": ["server.ts", "src", "test", "smoke"]

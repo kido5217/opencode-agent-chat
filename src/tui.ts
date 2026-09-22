@@ -1,6 +1,8 @@
 import { Plugin } from "@opencode/plugin/tui";
+import { createSignal } from "solid-js";
 import { parseOptions } from "./core/options.ts";
-import { transcriptFor } from "./core/transcript.ts";
+import { panelTranscriptFor, tuiTranscriptFor } from "./core/transcript.ts";
+import { panelRender, PANEL_NAME, type PanelContent } from "./panel.tsx";
 
 const TUI_COMMAND_ID = "agent-chat.view";
 
@@ -9,6 +11,12 @@ export default Plugin.define({
   setup(context) {
     const options = parseOptions(context.options);
     let registered = false;
+    const [panelContent, setPanelContent] = createSignal<PanelContent | null>(null);
+
+    const stopPanel = context.ui.slot({
+      append: "session.panel",
+      render: panelRender(panelContent),
+    });
 
     const stop = context.ui.slot({
       append: "app",
@@ -21,34 +29,56 @@ export default Plugin.define({
               {
                 id: TUI_COMMAND_ID,
                 title: "View the agent chat",
+                description: "Windowed transcript notice; `full` opens the full transcript panel",
                 group: "Agent Chat",
-                slash: { name: "agent-chat" },
-                run: async () => {
+                slash: { name: "agent-chat", arguments: true },
+                palette: true,
+                run: async (input?: string) => {
                   const route = context.ui.router.current();
                   if (route.type !== "session") {
                     context.ui.toast.show({ message: "agent-chat: no active session", variant: "warning" });
                     return;
                   }
                   const root = context.data.session.root(route.sessionID);
-                  let text: string | null;
+                  if (input?.trim() !== "full") {
+                    let windowed;
+                    try {
+                      windowed = tuiTranscriptFor(options.chatDir, root);
+                    } catch (err) {
+                      const reason = err instanceof Error ? err.message : String(err);
+                      context.ui.toast.show({ message: `agent-chat: ${reason}`, variant: "error" });
+                      return;
+                    }
+                    if (windowed === null) {
+                      context.ui.toast.show({ message: `agent-chat: no chat for this session`, variant: "warning" });
+                      return;
+                    }
+                    await context.client.session.synthetic({
+                      sessionID: route.sessionID,
+                      text: windowed.label,
+                      description: windowed.text,
+                      metadata: { source: "agent-chat" },
+                      resume: false,
+                    });
+                    return;
+                  }
+                  let full;
                   try {
-                    text = transcriptFor(options.chatDir, root);
+                    full = panelTranscriptFor(options.chatDir, root);
                   } catch (err) {
                     const reason = err instanceof Error ? err.message : String(err);
                     context.ui.toast.show({ message: `agent-chat: ${reason}`, variant: "error" });
                     return;
                   }
-                  if (text === null) {
+                  if (full === null) {
                     context.ui.toast.show({ message: `agent-chat: no chat for this session`, variant: "warning" });
                     return;
                   }
-                  await context.client.session.synthetic({
-                    sessionID: route.sessionID,
-                    text: `agent-chat transcript for ${root}`,
-                    description: text,
-                    metadata: { source: "agent-chat" },
-                    resume: false,
-                  });
+                  setPanelContent({ root, total: full.total, text: full.text });
+                  const opened = context.ui.panel.open(PANEL_NAME, { presentation: "fullscreen" });
+                  if (!opened) {
+                    context.ui.toast.show({ message: "agent-chat: could not open the panel", variant: "error" });
+                  }
                 },
               },
             ],
@@ -58,6 +88,9 @@ export default Plugin.define({
       },
     });
 
-    return () => stop();
+    return () => {
+      stop();
+      stopPanel();
+    };
   },
 });
