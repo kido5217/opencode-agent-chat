@@ -9,7 +9,7 @@ import { debugLog, ensureChatDir } from "./core/storage.ts";
 import { AGENT_KINDS, type Kind } from "./core/types.ts";
 
 const POST_DESC =
-  "Post to the session chat. Kinds: status, finding, question, blocker, handoff, answer (reply with in_reply_to). Post what changes a peer's knowledge or decisions — and post a `question` the moment you're blocked on a fact or decision a peer can settle. Silence is the prior, not a license to skip a question you could ask.";
+  "Post to the session chat. Kinds: status, finding, question, blocker, handoff, answer (reply with in_reply_to). Post what changes a peer's knowledge or decisions, and a `question` the moment you're blocked on a fact or decision a peer can settle — a peer who knows settles it faster than you re-deriving.";
 const READ_DESC =
   "Read chat messages. No arguments: unread since your cursor (consumes it). open_only for open questions (answer the ones you can settle), ids for specific messages, since/before to browse history (does not consume).";
 const ROSTER_DESC =
