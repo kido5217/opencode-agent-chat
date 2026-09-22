@@ -36,10 +36,10 @@ function fitBriefing(messages: Message[], maxChars: number): Message[] {
   return kept;
 }
 
-function compose(body: string, heading: string | null, questions: Message[]): string {
+function compose(body: string, heading: string | null, questions: Message[], readerName: string, now: number): string {
   const lines = [INJECTION_HEADER];
   if (heading !== null) lines.push(heading);
-  lines.push(body, renderOpenQuestions(questions));
+  lines.push(body, renderOpenQuestions(questions, readerName, now));
   return lines.join("\n");
 }
 
@@ -66,7 +66,7 @@ export function buildJoinBriefing(
     const kept = fitBriefing(messages, limits.maxChars);
     if (kept.length === 0) return null;
     const heading = `Join briefing: ${total} messages total; showing the last ${kept.length}.`;
-    return { text: compose(renderMessages(kept), heading, questions), cursorTo: latest };
+    return { text: compose(renderMessages(kept), heading, questions, name, now), cursorTo: latest };
   }).immediate();
 }
 
@@ -84,6 +84,6 @@ export function buildDigest(
     const { kept, cursorTo } = fitMessages(unread, limits.maxChars);
     const questions = openQuestions(db);
     setCursor(db, sessionID, cursor?.agent_name ?? name, cursorTo, now);
-    return { text: compose(renderMessages(kept), null, questions), cursorTo };
+    return { text: compose(renderMessages(kept), null, questions, name, now), cursorTo };
   }).immediate();
 }
