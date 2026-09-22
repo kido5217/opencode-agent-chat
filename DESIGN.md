@@ -36,8 +36,8 @@ Four pieces, one dependency direction: core ← adapter, core ← viewer, core �
 
 | Piece | Path | Responsibility |
 |---|---|---|
-| Core | `src/core/` | Pure TypeScript: storage, message protocol, digest, membership, options, migrations, transcript. No opencode imports; `bun:sqlite` is the only runtime dependency. |
-| Adapter | `src/plugin.ts` | The installed plugin. Wires opencode into core: event subscription, context-hook injection, synthetic-transcript filtering, tool registration. Thin and branch-free. |
+| Core | `src/core/` | Pure TypeScript: storage, message protocol, digest, membership, the participants' chat handles, options, migrations, transcript. No opencode imports; `bun:sqlite` is the only runtime dependency. |
+| Adapter | `src/plugin.ts` | The installed plugin. Wires opencode into core through the chat handle registry: event subscription, context-hook injection, synthetic-transcript filtering, tool registration. Thin and branch-free — every chat verb flows through a participant's handle. |
 | Viewer | `src/cli.ts` | `agent-chat` CLI. Reads chat files directly; never imports the plugin. |
 | TUI entry | `src/tui.ts` | The in-TUI `/agent-chat` command. Resolves the active session's root chat and appends its transcript through `client.session.synthetic`. Thin adapter over `src/core/transcript.ts`. |
 
@@ -177,7 +177,8 @@ The caps make draining lossless but gradual: what did not fit stays unread and a
 request. Nothing is injected when nothing is new.
 
 **Reads** (#11): the no-argument `chat_read` consumes what it returns (unread after the
-cursor, oldest first). Explicit ranges (`since`, `before`, `ids`, `kind`, `open_only`) never
+cursor, oldest first), advancing the cursor in the same storage transaction as the read.
+Explicit ranges (`since`, `before`, `ids`, `kind`, `open_only`) never
 move the cursor; browsing history cannot silently discard a peer's message.
 
 **Join briefing.** A participant's first request after joining receives the last ~20 messages,
@@ -202,7 +203,10 @@ message, so the filter keys on the id.
 Three tools in the `chat` namespace (#11), registered with `ctx.tool.transform` and
 `editor.namespace({ name: "chat", … })`; they surface as `chat_post`, `chat_read`,
 `chat_roster`. Every agent in the chat gets all three; opencode's own per-agent tool
-configuration is the only gate.
+configuration is the only gate. Each call executes through the calling participant's chat
+handle, which owns the post caps, the ranged-vs-consumed read decision, and the delivery
+decision; the adapter re-maps the handle's `ChatError` to a plain `Error` at the tool
+boundary.
 
 | Tool | Input | Returns | Errors |
 |---|---|---|---|
@@ -217,7 +221,8 @@ configuration is the only gate.
   its first event and its ancestors are walked into the same chat. A tool call that arrives
   before its session's first event can see `not attached to a chat` once; the next event
   registers it and the call succeeds.
-- Post caps (#12), enforced at the transport: `maxBodyChars` per post (4,000);
+- Post caps (#12), enforced in the participant's chat handle (the only path into a post):
+  `maxBodyChars` per post (4,000);
   `maxPostsPerRun` per agent execution run (25, reset each run, system rows excluded); a
   consecutive whitespace-identical post from the same sender in the same run is rejected
   with a reference to the earlier message. An over-limit post tells the agent to wrap up its
@@ -303,8 +308,10 @@ proves unusable for long chats.
 Detail: #16.
 
 - **Unit**: `bun test`, no extra framework. Test files mirror `src/core/` modules (storage,
-  protocol, digest, membership, options, migrations, render, types), plus a viewer
-  wrap/render contract test. Each test gets a fresh **temp-file**
+  protocol, digest, membership, handle, options, migrations, render, types), plus a viewer
+  wrap/render contract test. The chat handle is the test surface for protocol, digest, and
+  guard behaviour: the regression scenarios below run through its interface, not the
+  internal functions. Each test gets a fresh **temp-file**
   SQLite (real WAL and `busy_timeout` behavior; `:memory:` hides it). Timestamps come from an
   injectable `now()`.
 - **Smoke**: `bun run smoke [--scenario chat|config|all]`. Each scenario builds a temp
@@ -327,7 +334,8 @@ Detail: #16.
   hydration and reconcile (right roster, no replay, no synthetic rows); malformed input
   (unknown kind, over-cap body, unknown `in_reply_to`, multi-line and `[id]`-lookalike bodies
   that must not forge digest entries); migration idempotence; per-run caps.
-- **The adapter has no unit tests**: it stays branch-free and is guarded by the smoke run.
+- **The adapter has no unit tests**: every chat verb is a handle call, so it stays
+  branch-free and is guarded by the smoke run.
 - Gates are local (`bun test`, `bun run smoke`); no CI in v1.
 
 ## 12. Trust and safety

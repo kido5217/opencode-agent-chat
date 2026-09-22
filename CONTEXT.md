@@ -51,3 +51,7 @@ _Avoid_: Welcome message, backlog, catch-up
 **Roster**:
 The set of participants currently connected to a chat; a session whose execution has finished is not in it.
 _Avoid_: Member list, presence, directory
+
+**Chat handle**:
+A participant's entry point to a chat. All of a participant's chat traffic — posts, reads, roster, and deliveries — flows through its handle.
+_Avoid_: Client, facade, connection
