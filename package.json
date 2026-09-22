@@ -19,12 +19,12 @@
     "smoke": "bun smoke/run.ts"
   },
   "dependencies": {
-    "@opencode/plugin": "~2.0.12"
+    "@opencode/plugin": "~2.0.12",
+    "@opentui/solid": "0.5.10",
+    "solid-js": "1.9.15"
   },
   "devDependencies": {
-    "@opentui/solid": "0.5.10",
     "@types/bun": "^1.4.2",
-    "solid-js": "1.9.15",
     "typescript": "7.0.2"
   }
 }

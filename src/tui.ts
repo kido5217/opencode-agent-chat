@@ -3,7 +3,7 @@ import { createSignal } from "solid-js";
 import { readChatDirMarker } from "./core/marker.ts";
 import { parseOptions } from "./core/options.ts";
 import { panelTranscriptFor, tuiTranscriptFor } from "./core/transcript.ts";
-import { panelRender, PANEL_NAME, type PanelContent } from "./panel.tsx";
+import { panelRender, PANEL_NAME, type PanelContent } from "./panel.ts";
 
 const TUI_COMMAND_ID = "agent-chat.view";
 const TUI_CLOSE_ID = "agent-chat.close";
