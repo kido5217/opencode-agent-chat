@@ -371,7 +371,7 @@ Detail: #17, `v2-plugin-packaging.md` §10.
 | npm name | `opencode-agent-chat` |
 | plugin id | `opencode-agent-chat` (must equal the install name; removal `-opencode-agent-chat`) |
 | viewer bin | `agent-chat` |
-| version | `0.4.1` (manual semver; `0.1.0` was the first release) |
+| version | `0.5.0` (manual semver; `0.1.0` was the first release) |
 | license | MIT |
 | SDK | `@opencode/plugin` allowed the `~2.0.8` range (floor `2.0.8`); the dev lock stays at the floor, and each release re-proves the top of the range (scratch-worktree bump → `bun test` + typecheck, recorded on the release ticket) |
 
