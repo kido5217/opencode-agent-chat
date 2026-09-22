@@ -9,11 +9,11 @@ import { debugLog, ensureChatDir } from "./core/storage.ts";
 import { AGENT_KINDS, type Kind } from "./core/types.ts";
 
 const POST_DESC =
-  "Post to the session chat. Kinds: status, finding, question, blocker, handoff, answer (reply with in_reply_to). Silence is the default — post what changes a peer's decisions.";
+  "Post to the session chat. Kinds: status, finding, question, blocker, handoff, answer (reply with in_reply_to). Post what changes a peer's knowledge or decisions, and a `question` the moment you're blocked on a fact or decision a peer can settle — a peer who knows settles it faster than you re-deriving.";
 const READ_DESC =
-  "Read chat messages. No arguments: unread since your cursor (consumes it). open_only for open questions, ids for specific messages, since/before to browse history (does not consume).";
+  "Read chat messages. No arguments: unread since your cursor (consumes it). open_only for open questions (answer the ones you can settle), ids for specific messages, since/before to browse history (does not consume).";
 const ROSTER_DESC =
-  "List the agents currently connected to this session's chat, with name, agent type, and busy/idle status.";
+  "List the agents live in this session's chat, with name, type, and busy/idle status. Use it to pick a live `to` for a question, or to see who can answer.";
 
 const KINDS = [...AGENT_KINDS];
 
